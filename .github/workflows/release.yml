@@ -30,8 +30,12 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
 
+      - name: Debug event data
+        run: echo "${{ toJson(github.event.release) }}"
+
       - name: Upload app to Nextcloud appstore
-        if: "!github.event.release.prerelease"      
+#        if: "!github.event.release.prerelease"
+        if: github.event.release.prerelease == false
         uses: R0Wi/nextcloud-appstore-push-action@v1
         with:
           app_name: ${{ env.APP_NAME }}
