@@ -25,7 +25,6 @@ namespace OCA\DocumentServer\Controller;
 
 use OCA\DocumentServer\Document\DocumentStore;
 use OCA\DocumentServer\OnlyOffice\URLDecoder;
-use OCA\DocumentServer\XMLResponse;
 use OCA\DocumentServer\JSONResponse;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
