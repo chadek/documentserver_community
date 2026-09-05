@@ -66,16 +66,22 @@ class ChangeStore {
 	 * collides: by then the other writer has committed, so the fresh max is
 	 * past its changes.
 	 *
+	 * Which is also why the caller cannot work out the indexes for itself by
+	 * reading the max beforehand: after a collision the batch lands further
+	 * along than that. Return the index the first change was stored under.
+	 *
+	 * @return int the change index of the first change in the batch
 	 * @throws DBException
 	 */
-	public function addChangesForDocument(int $documentId, array $changes, string $user, string $userOriginal) {
+	public function addChangesForDocument(int $documentId, array $changes, string $user, string $userOriginal): int {
 		$time = $this->timeFactory->getTime();
 
 		for ($attempt = 1;; $attempt++) {
 			$this->connection->beginTransaction();
 
 			try {
-				$changeIndex = $this->getMaxChangeIndexForDocument($documentId) + 1;
+				$firstIndex = $this->getMaxChangeIndexForDocument($documentId) + 1;
+				$changeIndex = $firstIndex;
 
 				foreach ($changes as $change) {
 					$this->addChangeForDocument($documentId, $change, $user, $userOriginal, $time, $changeIndex);
@@ -83,7 +89,7 @@ class ChangeStore {
 				}
 
 				$this->connection->commit();
-				return;
+				return $firstIndex;
 			} catch (\Throwable $e) {
 				if ($this->connection->inTransaction()) {
 					$this->connection->rollBack();
