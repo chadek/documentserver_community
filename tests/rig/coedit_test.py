@@ -9,7 +9,7 @@ import argparse, asyncio, os, re, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib'))
 import config
-from driver import Session, COAUTH_JS, DISMISS_JS, PROBE_JS, TEXT_JS
+from driver import Session, wait_for_markers, COAUTH_JS, DISMISS_JS, PROBE_JS, TEXT_JS
 
 
 async def main():
@@ -67,13 +67,10 @@ async def main():
             print(f'   round {r} B co-auth:', await B.eval(COAUTH_JS))
 
         print('\n===== LIVE PROPAGATION =====')
-        text = {}
-        for s_ in (A, B):
-            text[s_.name] = await s_.eval(TEXT_JS)
-            print(f'   {s_.name} sees: {(text[s_.name] or "")[:220]!r}')
         ok = True
         for s_ in (A, B):
-            missing = [m for m in markers if m not in (text[s_.name] or '')]
+            missing = await wait_for_markers(s_, markers)
+            print(f'   {s_.name} sees: {str(await s_.eval(TEXT_JS))[:220]!r}')
             if missing:
                 ok = False
             print(f'   {s_.name}: missing markers {missing}' if missing

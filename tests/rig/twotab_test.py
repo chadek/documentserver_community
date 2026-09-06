@@ -15,7 +15,7 @@ import argparse, asyncio, os, subprocess, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib'))
 import config
 import harness
-from driver import Session, Tab, COAUTH_JS, DISMISS_JS, TEXT_JS
+from driver import Session, Tab, wait_for_markers, COAUTH_JS, DISMISS_JS, TEXT_JS
 
 
 async def main():
@@ -72,11 +72,9 @@ async def main():
             print('   A co-auth:', await A.eval(COAUTH_JS))
             print('   B co-auth:', await B.eval(COAUTH_JS))
 
-        await A.drain(8); await B.drain(8)
-        atext, btext = str(await A.eval(TEXT_JS)), str(await B.eval(TEXT_JS))
         wanted = [f'{t}-{who}{r}' for r in range(1, args.rounds + 1) for who in ('A', 'B')]
-        missA = [m for m in wanted if m not in atext]
-        missB = [m for m in wanted if m not in btext]
+        missA = await wait_for_markers(A, wanted)
+        missB = await wait_for_markers(B, wanted)
         print('\n   tab A is missing:', missA or 'nothing')
         print('   tab B is missing:', missB or 'nothing')
         if missA or missB:

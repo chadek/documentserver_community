@@ -136,6 +136,24 @@ PROBE_JS = r"""(() => {
 })()"""
 
 
+async def wait_for_markers(session, markers, timeout=45):
+    """Wait until a session's document model shows every one of these.
+
+    Co-authoring is asynchronous - a change is sent, stored, broadcast, applied,
+    and how long that takes depends on how busy the browser is - so the question
+    is whether the other session ends up showing it, not whether it did within
+    some fixed wait. Returns what is still missing when the time is up.
+    """
+    deadline = time.time() + timeout
+    missing = list(markers)
+    while True:
+        text = str(await session.eval(TEXT_JS))
+        missing = [m for m in markers if m not in text]
+        if not missing or time.time() >= deadline:
+            return missing
+        await session.drain(3)
+
+
 class Session:
     def __init__(self, name, port, user, password, base, fileid, chromium,
                  click=(420, 400), cell=(20, 60)):
