@@ -5,7 +5,10 @@ name: phpunit
 # They talk to a real Nextcloud, so this builds one around the app.
 
 on:
+  # branches are covered by pull_request; running both would run everything
+  # twice for one change and leave a cancelled run on the pull request
   push:
+    branches: [master]
     paths:
       - 'lib/**'
       - 'tests/**'

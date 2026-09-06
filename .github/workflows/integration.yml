@@ -5,7 +5,10 @@ name: integration
 # reproduced with the same commands on a laptop.
 
 on:
+  # branches are covered by pull_request; running both would run everything
+  # twice for one change and leave a cancelled run on the pull request
   push:
+    branches: [master]
     paths:
       - 'lib/**'
       - 'js/**'
