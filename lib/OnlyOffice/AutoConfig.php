@@ -25,7 +25,14 @@ use OCA\Onlyoffice\AppConfig;
 use OCP\IURLGenerator;
 
 class AutoConfig {
-	private const SUPPORTED_DEFAULT_FORMATS = [
+	/**
+	 * The formats OnlyOffice becomes the default opener for on a fresh install.
+	 *
+	 * A product choice, not a capability list: the bundled server can open far
+	 * more than this, but taking .txt, .csv or .html away from Nextcloud's own
+	 * handlers is not what installing a document server is asking for.
+	 */
+	private const DEFAULT_OPEN_FORMATS = [
 		'doc',
 		'docx',
 		'odp',
@@ -38,34 +45,19 @@ class AutoConfig {
 		'xlsx',
 	];
 
-	private const SUPPORTED_EDIT_FORMATS = [
-		'csv',
-		'doc',
-		'docx',
-		'odp',
-		'ods',
-		'odt',
-		'ppt',
-		'pptx',
-		'rtf',
-		'txt',
-		'xls',
-		'xlsx',
-	];
-
 	private $urlGenerator;
 	private $appConfig;
+	private $bundledFormats;
 
-	public function __construct(IURLGenerator $urlGenerator, AppConfig $appConfig) {
+	public function __construct(IURLGenerator $urlGenerator, AppConfig $appConfig, BundledFormats $bundledFormats) {
 		$this->urlGenerator = $urlGenerator;
 		$this->appConfig = $appConfig;
+		$this->bundledFormats = $bundledFormats;
 	}
 
 	public function autoConfigIfNeeded() {
 		if ($this->shouldAutoConfig()) {
 			$this->autoConfig();
-		} elseif ($this->isCommunityDocumentServerConfigured()) {
-			$this->syncSupportedFormats(false);
 		}
 	}
 
@@ -78,10 +70,6 @@ class AutoConfig {
 		return !$this->appConfig->GetDocumentServerUrl();
 	}
 
-	private function isCommunityDocumentServerConfigured(): bool {
-		return strpos((string)$this->appConfig->GetDocumentServerUrl(), 'apps/documentserver_community') !== false;
-	}
-
 	/**
 	 * Fill the documentserver url and other defaults
 	 */
@@ -90,43 +78,51 @@ class AutoConfig {
 			['path' => '_']), 0, -strlen('/web-apps/_'));
 		$this->appConfig->SetDocumentServerUrl($url);
 
-		$this->syncSupportedFormats(true);
+		$this->seedSupportedFormats();
 		$this->appConfig->SetSameTab(true);
 	}
 
-	private function syncSupportedFormats(bool $forceWrite): void {
-		$formatSettings = $this->appConfig->FormatsSetting();
-		$defaultFormats = [];
-		$editFormats = [];
-		$hasUnsupportedFormats = false;
-
-		foreach ($formatSettings as $format => $settings) {
-			if (!in_array($format, self::SUPPORTED_DEFAULT_FORMATS, true) && ($settings['def'] ?? false)) {
-				$hasUnsupportedFormats = true;
-			}
-			if (!in_array($format, self::SUPPORTED_EDIT_FORMATS, true) && ($settings['edit'] ?? false)) {
-				$hasUnsupportedFormats = true;
-			}
-
-			$defaultFormats[$format] = in_array($format, self::SUPPORTED_DEFAULT_FORMATS, true)
-				&& ($settings['def'] ?? false);
-			$editFormats[$format] = in_array($format, self::SUPPORTED_EDIT_FORMATS, true)
-				&& ($settings['edit'] ?? false);
-		}
-
-		if (!$forceWrite && !$hasUnsupportedFormats) {
+	/**
+	 * Write the format defaults, once, while the connector is still unconfigured.
+	 *
+	 * A seed and nothing more: from here on the admin owns these two settings.
+	 * This used to run from boot() on every request against a hardcoded list,
+	 * force-disabling anything outside it - so a format the admin enabled in
+	 * the settings UI was switched back off by the next page load, PDF among
+	 * them, which 9.x has a dedicated editor for.
+	 *
+	 * Seeding still earns its keep, because the connector leaves the
+	 * lossy-editable formats (odt, ods, odp, csv, rtf, txt) off by default;
+	 * that was the point of doing this at all.
+	 */
+	private function seedSupportedFormats(): void {
+		$bundled = $this->bundledFormats->actions();
+		if (!$bundled) {
+			// no package to ask, so nothing to say about it: leave the
+			// connector's own defaults alone rather than writing every format
+			// off
 			return;
 		}
 
-		// On initial config, enable all supported formats regardless of what FormatsSetting returns,
-		// so a fresh install does not end up with zero formats enabled.
-		if ($forceWrite) {
-			foreach (self::SUPPORTED_DEFAULT_FORMATS as $format) {
-				$defaultFormats[$format] = true;
-			}
-			foreach (self::SUPPORTED_EDIT_FORMATS as $format) {
-				$editFormats[$format] = true;
-			}
+		$editable = array_fill_keys($this->bundledFormats->editable(), true);
+
+		// Every format the connector has an opinion about, plus anything the
+		// bundled server knows that it does not: an explicit answer for each,
+		// so the seed does not half-depend on which formats the connector's own
+		// copy of the matrix happens to default on.
+		$formats = array_unique(array_merge(
+			array_keys($this->appConfig->FormatsSetting()),
+			array_keys($bundled)
+		));
+
+		$defaultFormats = [];
+		$editFormats = [];
+		foreach ($formats as $format) {
+			$known = isset($bundled[$format]);
+			$editFormats[$format] = $known && isset($editable[$format]);
+			// a default opener for something the bundled server cannot open
+			// would just be a file that fails to load
+			$defaultFormats[$format] = $known && in_array($format, self::DEFAULT_OPEN_FORMATS, true);
 		}
 
 		$this->appConfig->SetDefaultFormats($defaultFormats);

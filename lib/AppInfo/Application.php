@@ -28,6 +28,7 @@ use OCA\DocumentServer\IPC\MemcacheIPCFactory;
 use OCA\DocumentServer\IPC\RedisIPCFactory;
 use OCA\DocumentServer\JSSettingsHelper;
 use OCA\DocumentServer\OnlyOffice\AutoConfig;
+use OCA\DocumentServer\OnlyOffice\BundledFormats;
 use OCA\DocumentServer\OnlyOffice\URLDecoder;
 use OCA\Onlyoffice\AppConfig;
 use OCA\Onlyoffice\Crypt;
@@ -78,7 +79,8 @@ class Application extends App implements IBootstrap {
 			$appConfig = $this->buildAppConfig();
 			return new AutoConfig(
 				$server->get(IURLGenerator::class),
-				$appConfig
+				$appConfig,
+				$container->get(BundledFormats::class)
 			);
 		});
 	}

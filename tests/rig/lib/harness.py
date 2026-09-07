@@ -5,15 +5,23 @@ look at what actually landed in the file - which is the only thing that counts
 for the saving tests, since the editor saying "all changes are saved" only ever
 meant they reached the server.
 """
+import base64
+import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 
 APP_ID = 'documentserver_community'
+# The onlyoffice connector. Its app config is where the admin settings this app
+# has to honour live - the format matrix, the Save button - so the tests read
+# and write it as an admin would.
+CONNECTOR_ID = 'onlyoffice'
 
 
 def occ(*args, check=False):
@@ -41,21 +49,82 @@ def sql(query):
     return r.stdout.strip()
 
 
-def set_app_config(key, value):
+def set_app_config(key, value, app=APP_ID):
     """An app config value, and the wait for it to be visible to web requests.
 
     occ writes it through the local cache the web server does not share, so a
     test that reads it back straight away sees the old one and concludes the
     setting does nothing.
     """
-    occ('config:app:set', APP_ID, key, '--value', str(value))
+    occ('config:app:set', app, key, '--value', str(value))
 
 
-def delete_app_config(key):
-    occ('config:app:delete', APP_ID, key)
+def get_app_config(key, app=APP_ID):
+    return occ('config:app:get', app, key)
+
+
+def delete_app_config(key, app=APP_ID):
+    occ('config:app:delete', app, key)
 
 
 APP_CONFIG_PROPAGATION = 14  # seconds; see set_app_config
+
+
+def get_json_app_config(key, app=CONNECTOR_ID):
+    """A json-valued app config setting, or None when it is not set at all.
+
+    The connector keeps the format matrix like this: one setting holding an
+    extension -> bool map.
+    """
+    raw = get_app_config(key, app)
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def set_json_app_config(key, value, app=CONNECTOR_ID):
+    set_app_config(key, json.dumps(value, sort_keys=True), app)
+
+
+def editor_config(fileid, user_pair=None):
+    """What the connector decides about a file, as the editor page is told it.
+
+    The connector's own answer, rather than a guess from sdkjs internals: this
+    is where a format setting shows up. editorConfig.mode is "view" when it has
+    concluded the file is not editable, and document.permissions.edit is only
+    the user's write access, not the format decision.
+    """
+    user, password = config.credentials(user_pair or config.ADMIN)
+    # the header outright, not an auth handler: those only send credentials
+    # after a challenge, and an unauthenticated OCS call answers 200 with an
+    # error envelope rather than the 401 that would trigger one
+    credentials = base64.b64encode(f'{user}:{password}'.encode()).decode()
+    request = urllib.request.Request(
+        f'{config.BASE}/ocs/v2.php/apps/onlyoffice/api/v1/config/{fileid}?format=json',
+        headers={'OCS-APIRequest': 'true', 'Authorization': f'Basic {credentials}'})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode())
+
+
+def editor_mode(fileid, user_pair=None):
+    """"edit" or "view", as the connector would open the file."""
+    return editor_config(fileid, user_pair)['editorConfig'].get('mode', 'edit')
+
+
+def wait_for(reading, expected, timeout=30, interval=2):
+    """Poll until a reading matches, and return the last one either way.
+
+    For settings rather than documents: how long a value written with occ takes
+    to reach a web request depends on which caches are in play, so a test that
+    sleeps a fixed time is either slow or flaky.
+    """
+    deadline = time.time() + timeout
+    while True:
+        got = reading()
+        if got == expected or time.time() >= deadline:
+            return got
+        time.sleep(interval)
 
 
 def reset():
