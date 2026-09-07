@@ -11,8 +11,10 @@ list and shows the document as it was before the edits.
 
   1. type, then flush while the session is live
   2. the file has the text, and the change list and document are still there
-  3. type again, flush again with everybody gone
-  4. the file must hold both edits - the second flush must not have dropped the
+  3. `--snapshot`, which is that write on its own: for cron at a chosen
+     interval, or to get everything on disk on demand
+  4. type again, flush again with everybody gone
+  5. the file must hold both edits - the second flush must not have dropped the
      first one
 """
 import argparse, asyncio, os, subprocess, sys, time
@@ -50,6 +52,10 @@ async def main():
 
     print('==> resetting rig state')
     harness.reset()
+    # from the blank document, not whatever earlier runs left in the sample:
+    # this types three times, and a click into a document that already has text
+    # in it lands in the middle of it rather than after it
+    harness.restore_document(args.kind)
     # off, so that what the file holds is the flush's doing and nothing else
     harness.set_app_config('autosave_interval', 0)
     time.sleep(harness.APP_CONFIG_PROPAGATION)
@@ -84,6 +90,33 @@ async def main():
             ok = False
             print('   FAIL - the flush disposed of a document that is still open')
 
+        print(f'\n==> [1b] type {t}s, then flush --snapshot')
+        await A.type(f'{t}s ', row_offset=1)
+        await A.drain(10)
+        before = harness.changes()
+        print('   flush --snapshot: exit=%d %s' % harness.flush('--snapshot'))
+        got = harness.file_markers(args.file, args.member, [f'{t}1', f'{t}s'])
+        print('   file:', got, '| changes:', harness.changes(), '(was', str(before) + ')',
+              '| doc folders:', harness.doc_folders(),
+              '\n   snapshot state:', harness.snapshot_state())
+        if not all(got.values()):
+            ok = False
+            print('   FAIL - --snapshot did not write the document')
+        if harness.changes() < before:
+            ok = False
+            print('   FAIL - --snapshot consumed the change list of a live session')
+        if harness.doc_folders() == 0:
+            ok = False
+            print('   FAIL - --snapshot disposed of a document that is still open')
+        # a second one with nothing typed since is the common case for a
+        # document left open in a tab, and has to be a no-op rather than an
+        # error
+        code, out = harness.flush('--snapshot')
+        print('   again, with nothing typed since: exit=%d %s' % (code, out))
+        if code != 0:
+            ok = False
+            print('   FAIL - a redundant --snapshot reports failure')
+
         print('\n==> [2] a second session joins: it must see the first one\'s work')
         B = Session('B', 9333, ub, pb, args.base, args.fileid, args.chromium, (420, 470))
         try:
@@ -91,8 +124,8 @@ async def main():
             await B.login_and_open()
             await B.drain(25)
             text = str(await B.eval(TEXT_JS))
-            print('   joiner sees the marker:', f'{t}1' in text)
-            if f'{t}1' not in text:
+            print('   joiner sees the markers:', f'{t}1' in text, f'{t}s' in text)
+            if f'{t}1' not in text or f'{t}s' not in text:
                 ok = False
                 print('   FAIL - the joiner replayed an empty change list against the '
                       'baseline and got the document as it was before the edits')
@@ -110,7 +143,7 @@ async def main():
     harness.drop_sessions()
     print('   flush: exit=%d %s' % harness.flush())
     got = harness.file_markers(args.file, args.member,
-                         [f'{t}1', f'{t}2'])
+                         [f'{t}1', f'{t}s', f'{t}2'])
     print('   file:', got, '| doc folders:', harness.doc_folders(), '| changes:', harness.changes())
     if not all(got.values()):
         ok = False

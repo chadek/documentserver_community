@@ -38,12 +38,14 @@ nothing about a particular instance is hardcoded in a test.
 
 | test | covers |
 | --- | --- |
+| `formats` | a fresh install is seeded with every format the bundled server can edit, and from then on the admin's own choice survives page loads — `AutoConfig` runs from `boot()`, so on every request, and it used to re-apply a hardcoded list over whatever the settings UI had written. Also checks the setting reaches the editor, by reading the connector's own config response rather than sdkjs internals |
 | `smoke` | every format opens with no JS exception or failed request, takes an edit, and that edit is in the file after a flush. Catches the whole class of "the editor does not come up": an unrendered `api.js`, stylesheets killed by the CSP nonce, fonts the converter cannot find, appdata the file cache never heard about |
-| `flush-live` | flushing a document somebody is still editing writes the file and leaves the change list and the document folder alone. The change list is the only record of what was typed — `Editor.bin` stays at the version the document was opened at — so consuming it mid-session strands the document |
+| `flush-live` | flushing a document somebody is still editing writes the file and leaves the change list and the document folder alone, and `--snapshot` does that write on its own. The change list is the only record of what was typed — `Editor.bin` stays at the version the document was opened at — so consuming it mid-session strands the document |
 | `autosave` | edits reach the file while the document is open, with no cron and no flush; a save inside the interval does not re-assemble the document; `autosave_interval 0` turns it off |
 | `leave` | closing the editor and closing the tab both write the document out and dispose of it, one participant leaving does not end the document for the other, and reopening shows all of it |
 | `twotab` | two tabs of *one* browser — which share a cookie jar, a Nextcloud session and a connection pool, as two separate browsers do not — see each other type; and one of them dropped to view mode (`asc_coAuthoringDisconnect`, which is what sdkjs does on a licence verdict or a rights change) does not take the document away from the other |
 | `coedit` | two users in one document each see what the other types, in a text document and in a spreadsheet, with one socket session per browser — a second one means the transport reconnected mid-edit |
+| `forcesave` | the Save button the "Keep intermediate versions when editing" setting puts in the editor: the two-part reply the editor accepts, the text in the file with no cron and no flush, and a session opened afterwards still seeing everything — the button must snapshot, not flush |
 | `chat` | the chat panel carries messages both ways, and a late joiner reads the backlog |
 
 ## Things that will mislead you
@@ -59,7 +61,17 @@ nothing about a particular instance is hardcoded in a test.
   cannot upgrade, and the 400 is what makes the client fall back to long
   polling.
 - An app config value written with `occ` takes a few seconds to be visible to
-  web requests, which is what `harness.APP_CONFIG_PROPAGATION` waits out.
+  web requests, which is what `harness.APP_CONFIG_PROPAGATION` waits out, and
+  `harness.wait_for()` polls out where the wait can be shorter.
+- **`occ` boots this app too**, so an `occ` call made while the connector is
+  unconfigured re-runs auto-configuration — which is why `formats_test` deletes
+  the connector's url *last* and puts it back afterwards.
+- **The php image caches compiled code for up to a minute**
+  (`opcache.revalidate_freq=60`), so a code change you just made may not be in
+  the next web request even though the mount is live. `docker compose restart
+  app` clears it; `occ` does not use opcache at all, which is how the same
+  request can take the old path from the browser and the new one from the
+  command line.
 - Deleting appdata behind Nextcloud's back leaves stale file cache rows and the
   next conversion fails with `Could not create path .../Editor.bin`;
   `harness.reset()` follows it with `files:scan-app-data` for that reason.

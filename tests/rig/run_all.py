@@ -19,10 +19,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # name -> (script, args, what it covers)
 SUITE = [
+    ('formats', 'formats_test.py', [],
+     'the onlyoffice format settings are seeded, then left to the admin'),
     ('smoke', 'smoke_test.py', [],
      'every format opens, edits and reaches the file'),
     ('flush-live', 'flush_live_test.py', [],
-     'flushing a document somebody is still editing must not empty its change list'),
+     'flushing a document somebody is still editing must not empty its change '
+     'list, and --snapshot does that write on its own'),
     ('autosave', 'autosave_test.py', [],
      'edits reach the file while editing, with no cron and no flush'),
     ('leave', 'leave_test.py', [],
@@ -33,6 +36,8 @@ SUITE = [
      'two users see each other typing'),
     ('coedit-xlsx', 'coedit_test.py', ['--kind', 'xlsx', '--rounds', '1', '--tag', 'X'],
      'the same, in a spreadsheet, where changes carry recalc indexes'),
+    ('forcesave', 'forcesave_test.py', [],
+     "the editor's Save button writes the file without ending the session"),
     ('chat', 'chat_test.py', [],
      'the chat panel, including a late joiner reading the backlog'),
 ]

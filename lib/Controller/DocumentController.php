@@ -38,6 +38,7 @@ use OCA\DocumentServer\XHRCommand\ChatMessage;
 use OCA\DocumentServer\XHRCommand\CloseSession;
 use OCA\DocumentServer\XHRCommand\CommandDispatcher;
 use OCA\DocumentServer\XHRCommand\CursorCommand;
+use OCA\DocumentServer\XHRCommand\ForceSave;
 use OCA\DocumentServer\XHRCommand\GetLock;
 use OCA\DocumentServer\XHRCommand\GetMessages;
 use OCA\DocumentServer\XHRCommand\IsSaveLock;
@@ -82,6 +83,7 @@ class DocumentController extends Controller {
 		UnlockDocument::class,
 		CursorCommand::class,
 		OpenDocument::class,
+		ForceSave::class,
 		ChatMessage::class,
 		GetMessages::class,
 		CloseSession::class,
