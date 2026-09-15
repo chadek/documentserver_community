@@ -20,6 +20,14 @@ cert_dir=$(HOME)/.nextcloud/certificates
 # change.
 ds_repo=Euro-Office/DocumentServer
 ds_version=v9.3.4-hotfix.1
+# sha256 of the x86_64 rpm for ds_version, checked after download. This is
+# ~600 MB of native code including the x2t binary the web server executes, so
+# it is worth knowing that what arrived is what was reviewed - a pinned hash
+# also catches the release being re-uploaded under the same tag, which the
+# digest the API reports alongside the url cannot. Override it together with
+# ds_version; set it empty to build an unverified tree.
+#   make ds_version=v9.3.5 ds_sha256=$(curl -sfL .../releases/tags/v9.3.5 | ...)
+ds_sha256=f2b7748d6d45090b07428ca5c27cbb34f8bef89651fa4d568eee2d65dd02e0ad
 oo_dir=$(CURDIR)/3rdparty/onlyoffice/documentserver
 
 all: 3rdparty/onlyoffice/documentserver version
@@ -54,14 +62,29 @@ appstore:
 	# one fixed filename per release, while Euro-Office puts the version in the
 	# filename and it does not always match the tag (the v9.3.2 release ships a
 	# 9.3.1-dev.1 rpm).
+	# Matched against browser_download_url rather than anywhere in the json:
+	# the first https://…x86_64.rpm in the response is not necessarily an
+	# asset of it.
 	url=$$(curl -sfL $${GITHUB_TOKEN:+-H "Authorization: Bearer $$GITHUB_TOKEN"} \
 		https://api.github.com/repos/$(ds_repo)/releases/tags/$(ds_version) \
-		| grep -o 'https://[^"]*x86_64[.]rpm' | head -1); \
+		| grep -o '"browser_download_url": *"[^"]*x86_64[.]rpm"' \
+		| grep -o 'https://[^"]*' | head -1); \
 	if [ -z "$$url" ]; then echo "no x86_64 rpm asset for $(ds_repo) $(ds_version)" >&2; exit 1; fi; \
 	echo "fetching $$url"; \
-	curl -sL -o documentserver.x86_64.rpm "$$url"
+	curl -fsSL -o documentserver.x86_64.rpm "$$url"
+	# Before anything reads it, and before it is unpacked: this is where a
+	# truncated download, a substituted asset or a re-uploaded release stops.
+	bash -c 'if [ -n "$(ds_sha256)" ]; then \
+		echo "$(ds_sha256)  documentserver.x86_64.rpm" | sha256sum -c - || \
+		{ echo "!! the downloaded document server does not match ds_sha256; refusing to build" >&2; \
+		  rm -f documentserver.x86_64.rpm; exit 1; }; \
+	else echo "!! ds_sha256 is empty: building an unverified document server tree" >&2; fi'
 	cd oo-extract && rpm2cpio ../documentserver.x86_64.rpm | cpio -idm
-	chmod -R 777 oo-extract/
+	# Readable and traversable by the web server, writable only by the user
+	# doing the build. This used to be 777, which shipped a world-writable
+	# tree - so any local account could replace the x2t binary the web server
+	# runs.
+	chmod -R u+rwX,go+rX,go-w oo-extract/
 	# var/www/<vendor>/documentserver: "onlyoffice" upstream, "euro-office"
 	# on the fork.
 	src=$$(find oo-extract/var/www -mindepth 2 -maxdepth 2 -type d -name documentserver | head -1); \
