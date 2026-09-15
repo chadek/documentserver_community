@@ -49,6 +49,7 @@ use OCA\DocumentServer\XHRCommand\SessionDisconnect;
 use OCA\DocumentServer\XHRCommand\UnlockDocument;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
+use OCP\AppFramework\Http\Attribute\AnonRateLimit;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\PublicPage;
@@ -172,6 +173,11 @@ class DocumentController extends Controller {
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	#[PublicPage]
+	// Nothing authenticates this but the session id, and it holds a worker for
+	// the grace period, so cap what one caller can spend. Generous next to what
+	// an editor does - a session says goodbye once - and low enough that
+	// guessing at session ids is not free.
+	#[AnonRateLimit(limit: 20, period: 60)]
 	public function sessionClosed(string $sid): Response {
 		$session = $this->sessionManager->getSession($sid);
 		if (!$session) {

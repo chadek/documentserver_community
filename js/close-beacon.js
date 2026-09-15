@@ -18,6 +18,7 @@
 	'use strict';
 
 	var sessionId = null;
+	var goodbyeSent = null;
 
 	function publish(id) {
 		sessionId = id;
@@ -62,9 +63,14 @@
 			// back, and saying goodbye for it would end a session still editing
 			return;
 		}
-		if (!sessionId || !navigator.sendBeacon) {
+		if (!sessionId || !navigator.sendBeacon || goodbyeSent === sessionId) {
+			// the id we have already said goodbye for, rather than a flag:
+			// pagehide and unload both fire for the same departure, and the
+			// server holds the second one for its grace period before finding
+			// there is nothing left to do
 			return;
 		}
+		goodbyeSent = sessionId;
 		try {
 			navigator.sendBeacon(
 				window.__documentServerCloseUrl + '?sid=' + encodeURIComponent(sessionId)
