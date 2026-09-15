@@ -74,6 +74,14 @@ class Application extends App implements IBootstrap {
 			);
 		});
 
+		// Registered rather than left to autowiring: its one constructor
+		// argument is a string, and the container resolves those by parameter
+		// name before falling back to the default - so a service registered
+		// under the name "path" would be handed to it as a file path.
+		$context->registerService(BundledFormats::class, function () {
+			return new BundledFormats();
+		});
+
 		$context->registerService(AutoConfig::class, function (IAppContainer $container) {
 			$server = $container->getServer();
 			$appConfig = $this->buildAppConfig();
