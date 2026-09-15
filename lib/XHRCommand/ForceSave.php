@@ -50,6 +50,27 @@ class ForceSave implements ICommandHandler {
 	private const ERROR_UNKNOWN = 3;
 	private const ERROR_NOT_MODIFIED = 4;
 
+	/**
+	 * The shortest gap between two writes this command will ask for, in
+	 * seconds.
+	 *
+	 * Assembling a document is a converter run, and this is the one place a
+	 * client can ask for one directly: the periodic write is floored at
+	 * `autosave_interval`, but a command is whatever arrives on the socket.
+	 * Without a floor a client that sends forceSaveStart after every change -
+	 * scripted, or looping on an error - turns each keystroke into an x2t run
+	 * for as long as it keeps typing, because a stored change is exactly what
+	 * stops the write being skipped as unmodified.
+	 *
+	 * Short enough that a person pressing the button does not notice it: it
+	 * only refuses a second write within three seconds of the last one, and it
+	 * refuses it the same way an unmodified document is refused, so the button
+	 * ends its action rather than hanging. Nothing is lost by the refusal - the
+	 * changes are in the change store either way, and the next write picks
+	 * them up.
+	 */
+	private const MIN_INTERVAL = 3;
+
 	private $saveHandler;
 	private $timeFactory;
 	private $logger;
@@ -71,8 +92,24 @@ class ForceSave implements ICommandHandler {
 		// will send another forceSaveStart
 		$time = $this->timeFactory->getTime() * 1000;
 
+		// A session that cannot edit has nothing to save, and no Save button
+		// either - so this is a client that is not the editor's own, and the
+		// only thing it can achieve here is a converter run. Refused the way an
+		// unmodified document is: there is nothing for the editor to be told
+		// about, and no error to log on every poll.
+		if ($session->isReadOnly()) {
+			$sessionChannel->pushMessage(json_encode([
+				'type' => 'forceSaveStart',
+				'messages' => [
+					'code' => self::ERROR_NOT_MODIFIED,
+					'time' => $time,
+				],
+			]));
+			return;
+		}
+
 		try {
-			$written = $this->saveHandler->saveSnapshot($documentId);
+			$written = $this->saveHandler->saveSnapshotThrottled($documentId, self::MIN_INTERVAL);
 			$code = $written ? self::ERROR_NONE : self::ERROR_NOT_MODIFIED;
 		} catch (\Exception $e) {
 			$this->logger->warning('documentserver force save failed for document {doc}: {error}', [
@@ -87,11 +124,11 @@ class ForceSave implements ICommandHandler {
 		// here, so announcing a save that started and then failing it a moment
 		// later would only leave the button in the saving state for as long as
 		// it takes to say so. NotModified is a state of its own to the editor,
-		// and the right answer when the snapshot wrote nothing: either nothing
-		// has been typed since the last write, or another write of the same
-		// document is already running - the file holds what the button was
-		// pressed for either way, and this ends the button's action without
-		// claiming a save that did not happen.
+		// and the right answer when the snapshot wrote nothing: nothing has been
+		// typed since the last write, another write of the same document is
+		// already running, or one finished less than MIN_INTERVAL ago. The file
+		// was written moments ago in all three, and this ends the button's
+		// action without claiming a save that did not happen.
 		$sessionChannel->pushMessage(json_encode([
 			'type' => 'forceSaveStart',
 			'messages' => [

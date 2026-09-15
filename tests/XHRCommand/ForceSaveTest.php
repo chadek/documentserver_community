@@ -70,14 +70,14 @@ class ForceSaveTest extends TestCase {
 		);
 	}
 
-	private function session(): Session {
-		return new Session('sid', self::DOCUMENT, 'user', 'user', 'user', 100, false, 1);
+	private function session(bool $readOnly = false): Session {
+		return new Session('sid', self::DOCUMENT, 'user', 'user', 'user', 100, $readOnly, 1);
 	}
 
 	/**
 	 * @return array the messages pushed to the session's own channel, decoded
 	 */
-	private function pressSave(): array {
+	private function pressSave(?Session $session = null): array {
 		$pushed = [];
 		$sessionChannel = $this->createMock(IIPCChannel::class);
 		$sessionChannel->method('pushMessage')->willReturnCallback(function (string $message) use (&$pushed) {
@@ -86,7 +86,7 @@ class ForceSaveTest extends TestCase {
 
 		$this->handler->handle(
 			['type' => 'forceSaveStart'],
-			$this->session(),
+			$session ?? $this->session(),
 			$sessionChannel,
 			$this->createMock(IIPCChannel::class),
 			new CommandDispatcher()
@@ -106,8 +106,10 @@ class ForceSaveTest extends TestCase {
 
 	public function testPressingSaveWritesTheDocumentAndReportsItSaved() {
 		$this->saveHandler->expects($this->once())
-			->method('saveSnapshot')
-			->with(self::DOCUMENT)
+			->method('saveSnapshotThrottled')
+			// the floor is the handler's own; what matters here is that it
+			// asks for a throttled write rather than an unconditional one
+			->with(self::DOCUMENT, $this->greaterThan(0))
 			->willReturn(true);
 
 		$pushed = $this->pressSave();
@@ -133,7 +135,7 @@ class ForceSaveTest extends TestCase {
 	 */
 	public function testPressingSaveDoesNotEndTheEditingSession() {
 		$this->saveHandler->expects($this->never())->method('flushChanges');
-		$this->saveHandler->method('saveSnapshot')->willReturn(true);
+		$this->saveHandler->method('saveSnapshotThrottled')->willReturn(true);
 
 		$this->pressSave();
 	}
@@ -144,7 +146,7 @@ class ForceSaveTest extends TestCase {
 	 * and it ends the button's action without claiming a save.
 	 */
 	public function testNothingToSaveIsReportedAsNotModified() {
-		$this->saveHandler->method('saveSnapshot')->willReturn(false);
+		$this->saveHandler->method('saveSnapshotThrottled')->willReturn(false);
 
 		$pushed = $this->pressSave();
 
@@ -159,7 +161,7 @@ class ForceSaveTest extends TestCase {
 	 * save that started and never landed.
 	 */
 	public function testAFailedSaveIsReportedRatherThanThrown() {
-		$this->saveHandler->method('saveSnapshot')
+		$this->saveHandler->method('saveSnapshotThrottled')
 			->willThrowException(new \Exception('x2t said no'));
 
 		$pushed = $this->pressSave();
@@ -167,5 +169,47 @@ class ForceSaveTest extends TestCase {
 		$this->assertCount(1, $pushed);
 		$this->assertSame('forceSaveStart', $pushed[0]['type']);
 		$this->assertSame(3, $pushed[0]['messages']['code'], 'c_oAscServerCommandErrors.UnknownError');
+	}
+
+	/**
+	 * A session that cannot edit has no Save button, so a forceSaveStart from
+	 * one is not the editor asking: it is a client that has nothing to save and
+	 * can only make the server run the converter. Answered, so nothing hangs,
+	 * but not acted on.
+	 */
+	public function testAReadOnlySessionCannotAskForAWrite() {
+		$this->saveHandler->expects($this->never())->method('saveSnapshotThrottled');
+		$this->saveHandler->expects($this->never())->method('saveSnapshot');
+
+		$pushed = $this->pressSave($this->session(true));
+
+		$this->assertCount(1, $pushed);
+		$this->assertSame('forceSaveStart', $pushed[0]['type']);
+		$this->assertSame(4, $pushed[0]['messages']['code'], 'c_oAscServerCommandErrors.NotModified');
+	}
+
+	/**
+	 * The write has to be floored, because this is the one place a client asks
+	 * for a converter run directly - the periodic write is floored by
+	 * `autosave_interval`, a command is whatever arrives on the socket. A
+	 * client that sends forceSaveStart after every change would otherwise turn
+	 * each keystroke into an x2t run, since a stored change is exactly what
+	 * stops a write being skipped as unmodified.
+	 *
+	 * Asserted as "does not call saveSnapshot()", because that is the shape the
+	 * bug had: the unthrottled call is the one that has to stay gone.
+	 */
+	public function testTheWriteIsFlooredRatherThanRunOnDemand() {
+		$this->saveHandler->expects($this->never())->method('saveSnapshot');
+		$this->saveHandler->expects($this->exactly(3))
+			->method('saveSnapshotThrottled')
+			->with(self::DOCUMENT, $this->greaterThan(0))
+			->willReturn(false);
+
+		// three presses in the same second, as a script would send them
+		for ($i = 0; $i < 3; $i++) {
+			$pushed = $this->pressSave();
+			$this->assertSame(4, $pushed[0]['messages']['code'], 'c_oAscServerCommandErrors.NotModified');
+		}
 	}
 }
