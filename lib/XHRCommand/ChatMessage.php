@@ -46,6 +46,20 @@ class ChatMessage implements ICommandHandler {
 	private const LOCK_ATTEMPTS = 5;
 	private const LOCK_RETRY_US = 50 * 1000;
 
+	/**
+	 * The longest message that will be stored and relayed, in characters.
+	 *
+	 * sdkjs c_oAscMaxCellOrCommentLength, which is what the chat panel puts in
+	 * the textarea's maxlength - so this is the editor's own limit, enforced
+	 * where it counts rather than only in the browser. Without it the length is
+	 * whatever a client puts on the socket, and the history is capped at a
+	 * hundred *messages* with nothing said about their size, so a scripted
+	 * client could park as much in a document's appdata as the request limit
+	 * allows. Truncated rather than dropped: a message that is too long is a
+	 * client that is not the editor, and there is nothing to report to.
+	 */
+	private const MAX_MESSAGE_LENGTH = 32767;
+
 	private $documentStore;
 	private $lockingProvider;
 	private $logger;
@@ -73,7 +87,7 @@ class ChatMessage implements ICommandHandler {
 			'user' => $session->getUserId(),
 			'useridoriginal' => $session->getUserOriginal(),
 			'username' => $session->getUserName(),
-			'message' => $command['message'],
+			'message' => mb_substr($command['message'], 0, self::MAX_MESSAGE_LENGTH),
 			'time' => time() * 1000,
 		];
 
