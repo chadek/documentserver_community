@@ -73,6 +73,16 @@ class FlushChanges extends Base {
 
 	protected function execute(InputInterface $input, OutputInterface $output) {
 		$documents = $this->documentStore->getOpenDocuments();
+
+		// One document that will not assemble - a converter that chokes on it,
+		// a file the web server may not write - must not decide the fate of
+		// every document after it in the list. Returning at the first failure
+		// meant a single bad document left the rest unwritten, which is the
+		// opposite of what somebody running this before a backup is asking for.
+		// So each is attempted, and the exit code reports whether all of them
+		// worked.
+		$failed = 0;
+
 		foreach ($documents as $documentId) {
 			// A snapshot writes the file and leaves the editing session
 			// running, which is the only safe thing to do to a document
@@ -84,11 +94,12 @@ class FlushChanges extends Base {
 				try {
 					$this->saveHandler->saveSnapshot($documentId);
 				} catch (\Exception $e) {
+					$failed++;
 					$this->logger->error(
 						'Error while saving a snapshot of document ' . $documentId,
 						['exception' => $e, 'app' => 'documentserver_community']
 					);
-					return 1;
+					$output->writeln("<error>could not save a snapshot of document $documentId: {$e->getMessage()}</error>");
 				}
 				continue;
 			}
@@ -101,16 +112,18 @@ class FlushChanges extends Base {
 					// SaveHandler::flushChanges().
 					$this->saveHandler->flushChanges($documentId);
 				} catch (\Exception $e) {
+					$failed++;
 					$this->logger->error(
 						'Error while applying changes for document ' . $documentId,
 						['exception' => $e, 'app' => 'documentserver_community']
 					);
-					// the exit codes were the wrong way round, which makes the
-					// command unusable from cron or a && chain
-					return 1;
+					$output->writeln("<error>could not flush document $documentId: {$e->getMessage()}</error>");
 				}
 			}
 		}
-		return 0;
+
+		// the exit codes were the wrong way round, which makes the command
+		// unusable from cron or a && chain
+		return $failed === 0 ? 0 : 1;
 	}
 }
