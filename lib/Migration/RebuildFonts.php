@@ -52,7 +52,13 @@ class RebuildFonts implements IRepairStep {
 			$this->fontManager->rebuildFonts();
 		} catch (\Exception $e) {
 			$this->logger->warning('An exception occurred trying to rebuild fonts', ['exception' => $e]);
-			$output->warning("Error while trying to rebuild fonts, if you had any custom fonts configured you'll need to run `occ documentserver:fonts --rebuild`");
+			// The message, not just the fact: what goes wrong here is a font
+			// list that was not written, and the only useful thing anyone can
+			// be told is which file and why. Without it this reads as a
+			// formality and an admin has to go to the log to find out that
+			// their fonts are the ones the app was built with.
+			$output->warning('Error while trying to rebuild fonts: ' . $e->getMessage());
+			$output->warning("Custom fonts will not be available until this is fixed and `occ documentserver:fonts --rebuild` succeeds");
 		}
 	}
 }

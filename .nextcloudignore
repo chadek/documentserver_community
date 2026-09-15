@@ -10,3 +10,4 @@ screenshots
 .nextcloudignore
 Makefile
 tests
+tools

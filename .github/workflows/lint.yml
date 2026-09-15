@@ -35,7 +35,7 @@ jobs:
 
       - name: lint
         run: |
-          find lib appinfo tests -name '*.php' -not -path './3rdparty/*' -print0 \
+          find lib appinfo tests tools -name '*.php' -not -path './3rdparty/*' -print0 \
             | xargs -0 -n1 -P4 php -l
 
   javascript:

@@ -47,6 +47,12 @@ USER2 = _env('RIG_USER2', 'bob:Kq7-rigTest-3910')
 
 CHROMIUM = _env('RIG_CHROMIUM', '/usr/bin/chromium')
 
+# The working copy the rig mounts, and where x2t's files are inside it. The PDF
+# test reads and writes the document server tree directly, because the font list
+# it covers is a file in the tree rather than anything the app stores.
+APP_SOURCE = _env('APP_SOURCE', os.path.dirname(os.path.dirname(HERE)))
+CONVERTER_BIN = '3rdparty/onlyoffice/documentserver/server/FileConverter/bin'
+
 # The documents provisioning uploaded, and where the text typed into each of
 # them ends up inside the saved file.
 DOCUMENTS = {

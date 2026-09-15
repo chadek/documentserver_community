@@ -28,6 +28,9 @@ use Psr\Log\LoggerInterface;
 class ConverterBinary {
 	public const BINARY_DIRECTORY = __DIR__ . '/../../3rdparty/onlyoffice/documentserver/server/FileConverter/bin';
 
+	/** What x2t prints on stdout, and only on stdout, for a font it cannot open. */
+	private const MISSING_FONT = "Can't load fontfile ";
+
 	private $logger;
 
 	public function __construct(LoggerInterface $logger) {
@@ -84,7 +87,40 @@ class ConverterBinary {
 			throw new DocumentConversionException("x2t exited with status $status");
 		}
 
+		$this->reportMissingFonts($output);
+
 		return $output;
+	}
+
+	/**
+	 * A font x2t could not load is a line on stdout and nothing else.
+	 *
+	 * It carries on and exits 0, and what comes out is a document with no
+	 * glyphs in it - the whole of #371, #251 and #287, which went four years
+	 * without a diagnostic because a blank PDF and a good one are the same
+	 * successful conversion from here. Not fatal: one missing custom font
+	 * should not fail a conversion that is otherwise fine. But it goes in the
+	 * log, because nothing else in the system can tell the difference.
+	 */
+	private function reportMissingFonts(string $output): void {
+		if (strpos($output, self::MISSING_FONT) === false) {
+			return;
+		}
+
+		$missing = [];
+		foreach (explode("\n", $output) as $line) {
+			$at = strpos($line, self::MISSING_FONT);
+			if ($at !== false) {
+				$missing[trim(substr($line, $at + strlen(self::MISSING_FONT)))] = true;
+			}
+		}
+
+		$this->logger->error(
+			'x2t could not load ' . count($missing) . ' font(s); anything set in them converts '
+			. 'with no glyphs at all. Run `occ documentserver:fonts --rebuild`. Missing: '
+			. implode(', ', array_slice(array_keys($missing), 0, 5)),
+			['app' => 'documentserver_community']
+		);
 	}
 
 	public function test(): bool {
