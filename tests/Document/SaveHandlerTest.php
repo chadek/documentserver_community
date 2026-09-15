@@ -204,4 +204,64 @@ class SaveHandlerTest extends TestCase {
 
 		$this->assertFalse($saveHandler->saveSnapshotIfDue(self::DOCUMENT));
 	}
+
+	/**
+	 * The floor under a write somebody asked for, which is what stops a client
+	 * command turning every keystroke into a converter run. Separate from the
+	 * autosave interval on purpose: this one is not the admin's to switch off.
+	 */
+	public function testAThrottledWriteIsRefusedInsideItsInterval() {
+		$this->documentStore->method('getSnapshotState')
+			->willReturn($this->snapshotState(1, $this->now - 2));
+
+		$this->documentStore->expects($this->never())->method('saveChanges');
+
+		$this->assertFalse($this->saveHandler->saveSnapshotThrottled(self::DOCUMENT, 3));
+	}
+
+	public function testAThrottledWriteHappensOnceItsIntervalHasPassed() {
+		$this->documentStore->method('getSnapshotState')
+			->willReturn($this->snapshotState(1, $this->now - 4));
+		$this->changeStore->method('getMaxChangeIndexForDocument')->willReturn(4);
+		$this->changeStore->method('getChangesForDocument')->willReturn([$this->change()]);
+
+		$this->documentStore->expects($this->once())->method('saveChanges');
+
+		$this->assertTrue($this->saveHandler->saveSnapshotThrottled(self::DOCUMENT, 3));
+	}
+
+	/**
+	 * `autosave_interval 0` turns off the periodic write. It must not also
+	 * silence a write a client asked for: the admin said they did not want the
+	 * document assembled on a timer, not that the Save button should stop
+	 * working.
+	 */
+	public function testTurningAutosaveOffDoesNotDisableAThrottledWrite() {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturn('0');
+
+		$timeFactory = $this->createMock(ITimeFactory::class);
+		$timeFactory->method('getTime')->willReturnCallback(function () {
+			return $this->now;
+		});
+
+		$saveHandler = new SaveHandler(
+			$this->documentStore,
+			$this->changeStore,
+			$this->createMock(DocumentConverter::class),
+			$this->createMock(ILockingProvider::class),
+			$this->sessionManager,
+			$config,
+			$timeFactory
+		);
+
+		$this->documentStore->method('getSnapshotState')
+			->willReturn($this->snapshotState(1, $this->now - 3600));
+		$this->changeStore->method('getMaxChangeIndexForDocument')->willReturn(4);
+		$this->changeStore->method('getChangesForDocument')->willReturn([$this->change()]);
+
+		$this->documentStore->expects($this->once())->method('saveChanges');
+
+		$this->assertTrue($saveHandler->saveSnapshotThrottled(self::DOCUMENT, 3));
+	}
 }

@@ -80,27 +80,54 @@ class SaveChangesCommand implements ICommandHandler {
 		// deleteIndex is repeated on every chunk of the same save, and it is
 		// relative to the change store as it was before the save started, so
 		// re-applying it once we have stored a chunk would delete that chunk.
-		if ($isFirstChunk && $command['deleteIndex']) {
-			$this->changeStore->deleteChangesByIndex($session->getDocumentId(), (int)$command['deleteIndex']);
+		//
+		// It is absent from most saves and -1 when the client explicitly has
+		// nothing to discard (sdkjs guards its own arithmetic with
+		// `-1 !== this.deleteIndex`). Both used to reach the delete: the key was
+		// read unguarded, and the test was truthiness, so -1 asked for
+		// `change_index >= -1` - every change in the document.
+		$deleteIndex = $command['deleteIndex'] ?? null;
+		if ($isFirstChunk && is_numeric($deleteIndex) && (int)$deleteIndex >= 0) {
+			$this->changeStore->deleteChangesByIndex($session->getDocumentId(), (int)$deleteIndex);
 		}
 
+		// Relayed for completeness and nothing else: sdkjs never reads
+		// startIndex out of this message. Which is why it is left as the max
+		// read before the insert, stale though that is when a save races
+		// another one - there is nothing on the other end for a corrected value
+		// to be correct *for*, and changesIndex below is the field that is
+		// actually interpreted.
 		$startIndex = $this->changeStore->getMaxChangeIndexForDocument($session->getDocumentId());
 
-		$this->changeStore->addChangesForDocument($session->getDocumentId(), $changes, $session->getUserId(), $session->getUserOriginal());
+		$firstIndex = $this->changeStore->addChangesForDocument(
+			$session->getDocumentId(), $changes, $session->getUserId(), $session->getUserOriginal());
 
-		$changeIndex = $this->changeStore->getMaxChangeIndexForDocument($session->getDocumentId());
+		// How many changes the document now holds, not the highest index in it.
+		//
+		// sdkjs stores this as its "synced" position and derives absolute
+		// positions from it by adding its own offsets - on the wire,
+		// `deleteIndex += this.changesIndex`, and locally the same shape,
+		// `Changes.length = SyncIndex + deleteIndex`, where a length is plainly
+		// a count. Sending the max made every index the client derived one too
+		// low. It is harmless while a save carries changes, because the result
+		// still lands past the end of the store and deletes nothing - but sdkjs
+		// also sends a saveChanges with an *empty* change array when all it has
+		// to say is a deleteIndex (`0 < aChanges.length || null !== deleteIndex`),
+		// and there the off-by-one is a request to delete one change that
+		// should have survived.
+		$changeCount = $this->changeStore->getMaxChangeIndexForDocument($session->getDocumentId()) + 1;
 
 		$documentChannel->pushMessage(json_encode([
 			'type' => 'saveChanges',
 			'docId' => $session->getDocumentId(),
 			'userId' => $session->getUserId(),
-			'changes' => array_map(function (string $changeString, int $offset) use ($session, $startIndex) {
-				// the store numbers the changes it just stored from $startIndex + 1 up
-				$change = new Change($session->getDocumentId(), time(), $changeString, $session->getUserId(), $session->getUserOriginal(), $startIndex + 1 + $offset);
+			'changes' => array_map(function (string $changeString, int $offset) use ($session, $firstIndex) {
+				// the store numbered the changes it just stored from $firstIndex up
+				$change = new Change($session->getDocumentId(), time(), $changeString, $session->getUserId(), $session->getUserOriginal(), $firstIndex + $offset);
 				return $change->formatForClient();
 			}, $changes, array_keys($changes)),
 			'startIndex' => $startIndex,
-			'changesIndex' => $changeIndex,
+			'changesIndex' => $changeCount,
 			'locks' => [],
 			// Relayed, not synthesised: for spreadsheets this carries the
 			// recalcIndexRows/recalcIndexColumns the receiver needs to shift
@@ -120,7 +147,7 @@ class SaveChangesCommand implements ICommandHandler {
 		if (!$isLastChunk) {
 			// Mid-save: the client waits for savePartChanges before sending the
 			// next chunk, and the locks stay held until the save completes.
-			$sessionChannel->pushMessage('{"type":"savePartChanges","changesIndex":' . $changeIndex . '}');
+			$sessionChannel->pushMessage('{"type":"savePartChanges","changesIndex":' . $changeCount . '}');
 			return;
 		}
 
@@ -139,7 +166,7 @@ class SaveChangesCommand implements ICommandHandler {
 		}
 
 		$now = time() * 1000;
-		$sessionChannel->pushMessage('{"type":"unSaveLock","index":' . $changeIndex . ',"time":' . $now . '}');
+		$sessionChannel->pushMessage('{"type":"unSaveLock","index":' . $changeCount . ',"time":' . $now . '}');
 
 		// Write the document out if it has been long enough since the last
 		// time. The editor's "all changes are saved" only ever meant that the

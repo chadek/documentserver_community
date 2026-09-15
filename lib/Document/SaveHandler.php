@@ -94,8 +94,30 @@ class SaveHandler {
 			return false;
 		}
 
+		return $this->saveSnapshotThrottled($documentId, $interval);
+	}
+
+	/**
+	 * Write the document out unless it was written less than $minInterval
+	 * seconds ago.
+	 *
+	 * Separate from saveSnapshotIfDue() because the two answer to different
+	 * things: that one is the periodic write and the admin can turn it off,
+	 * this one is a floor under a write somebody asked for. A client command
+	 * must not be able to turn a keystroke into a converter run, and it must
+	 * not be silenced by `autosave_interval 0` either - the admin turning off
+	 * the periodic write did not ask for the Save button to stop working.
+	 *
+	 * The last-write time is the one the snapshot state already keeps, and
+	 * writeDocument() stamps it before running the converter as well as after,
+	 * so a document that fails to assemble backs off rather than being retried
+	 * on every request.
+	 *
+	 * @return bool whether the document was written
+	 */
+	public function saveSnapshotThrottled(int $documentId, int $minInterval): bool {
 		$state = $this->documentStore->getSnapshotState($documentId);
-		if (($this->timeFactory->getTime() - $state['time']) < $interval) {
+		if (($this->timeFactory->getTime() - $state['time']) < $minInterval) {
 			return false;
 		}
 

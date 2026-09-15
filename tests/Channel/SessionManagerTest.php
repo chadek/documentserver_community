@@ -153,6 +153,62 @@ class SessionManagerTest extends TestCase {
 		$this->assertFalse($this->manager->isDocumentActive(6));
 	}
 
+	/**
+	 * A session that stopped polling stops counting as a participant straight
+	 * away, rather than when the background job next deletes it.
+	 *
+	 * Rows only go away in cleanSessions(), which runs from cron - so between
+	 * two runs the table holds every browser that was ever killed mid-edit.
+	 * Counting those meant a document was never seen to be empty, and the write
+	 * that happens when the last editor leaves never happened.
+	 */
+	public function testAnExpiredSessionIsNotAParticipant() {
+		$this->time = 10;
+		$this->manager->newSession('foo', 5);
+		$this->assertTrue($this->manager->isDocumentActive(5));
+
+		$this->time = 10 + SessionManager::EXPIRED_SESSION_TIMEOUT + 1;
+
+		$this->assertFalse($this->manager->isDocumentActive(5),
+			'a session nobody has polled for longer than the timeout still counts');
+		$this->assertEquals([], $this->manager->getSessionsForDocument(5));
+		// still there to be revived, just not a participant
+		$this->assertNotNull($this->manager->getSession('foo'));
+	}
+
+	public function testPollingKeepsASessionAParticipant() {
+		$this->time = 10;
+		$this->manager->newSession('foo', 5);
+
+		$this->time = 10 + SessionManager::EXPIRED_SESSION_TIMEOUT + 1;
+		$this->manager->markAsSeen('foo');
+
+		$this->assertTrue($this->manager->isDocumentActive(5));
+		$this->assertCount(1, $this->manager->getSessionsForDocument(5));
+	}
+
+	/**
+	 * expireSession() is how a client that said it is going away is dropped
+	 * without deleting the row, so a page that turns out to still be there
+	 * revives on its next poll. That only means anything if an expired session
+	 * stops counting immediately.
+	 */
+	public function testExpiringASessionDropsItFromTheDocumentAtOnce() {
+		$this->time = 10;
+		$this->manager->newSession('foo', 5);
+		$this->manager->newSession('bar', 5);
+
+		$this->manager->expireSession('foo');
+
+		$this->assertEquals(['bar'], array_map(
+			fn ($session) => $session->getSessionId(),
+			$this->manager->getSessionsForDocument(5)));
+
+		// and it comes back if it was still polling after all
+		$this->manager->markAsSeen('foo');
+		$this->assertCount(2, $this->manager->getSessionsForDocument(5));
+	}
+
 	public function testGetSessionCount() {
 		$this->time = 10;
 

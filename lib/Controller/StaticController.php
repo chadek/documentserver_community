@@ -131,10 +131,17 @@ class StaticController extends Controller {
 
 			// the page that embeds the editor is the one that can still say
 			// goodbye when the editor's own frame is being removed
-			return $this->createFileResponseWithContent(
-				$localPath,
-				file_get_contents($localPath) . "\n" . $this->closeBeacon('close-beacon-host.js')
-			);
+			//
+			// Checked here as well as in createFileResponse(), because this
+			// branch reads the file itself: on a build where api.js was never
+			// rendered from its .tpl, file_get_contents() on a missing file
+			// turned a 404 into a warning and a 200 with nothing in it.
+			if (file_exists($localPath)) {
+				return $this->createFileResponseWithContent(
+					$localPath,
+					file_get_contents($localPath) . "\n" . $this->closeBeacon('close-beacon-host.js')
+				);
+			}
 		}
 
 		return $this->createFileResponse($localPath);

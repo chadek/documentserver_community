@@ -75,7 +75,14 @@ class Cleanup extends Job {
 					// server going away (#100). A document nobody has typed
 					// into since the last write returns without running the
 					// converter at all.
-					$this->saveHandler->saveSnapshot($documentId);
+					//
+					// Through the same interval the editing path uses, not past
+					// it: this is the periodic write arriving by another road,
+					// and an admin who set `autosave_interval 0` to stop the
+					// converter running under their editors did not mean
+					// "except from cron". It also stops a busy instance turning
+					// one cron pass into a converter run per open document.
+					$this->saveHandler->saveSnapshotIfDue($documentId);
 				} else {
 					$this->saveHandler->flushChanges($documentId);
 				}

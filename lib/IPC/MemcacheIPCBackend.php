@@ -25,6 +25,7 @@ namespace OCA\DocumentServer\IPC;
 
 use OCA\DocumentServer\Channel\Channel;
 use OCP\IMemcache;
+use OCP\IMemcacheTTL;
 
 /**
  * IPC Channels built on top of memcache concurrency primitives
@@ -89,6 +90,7 @@ class MemcacheIPCBackend implements IIPCBackend {
 			// can take is written off, so a writer that died mid-publish does
 			// not stall the channel.
 			$misses = $this->memcache->inc("$channel::miss_$readKey");
+			$this->expire("$channel::miss_$readKey");
 			if (is_int($misses) && $misses < self::MAX_PUBLISH_MISSES) {
 				return null;
 			}
@@ -103,5 +105,22 @@ class MemcacheIPCBackend implements IIPCBackend {
 		$this->memcache->inc("$channel::read_key");
 
 		return $message;
+	}
+
+	/**
+	 * Put an expiry on a key that inc() created without one.
+	 *
+	 * `inc()` is the only atomic counter IMemcache offers and it takes no TTL,
+	 * so a miss counter for a slot that is never resolved - the session ended
+	 * while a push was in flight - would otherwise sit in the cache for the
+	 * lifetime of the process. The messages themselves already expire, and this
+	 * gives their bookkeeping the same lifetime - long enough to outlive any
+	 * push it is counting, short enough that an abandoned one goes away.
+	 * Backends with no TTL support keep the old behaviour.
+	 */
+	private function expire(string $key): void {
+		if ($this->memcache instanceof IMemcacheTTL) {
+			$this->memcache->setTTL($key, Channel::TIMEOUT * 4);
+		}
 	}
 }
