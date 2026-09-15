@@ -55,10 +55,77 @@ class AutoConfig {
 		$this->bundledFormats = $bundledFormats;
 	}
 
+	/**
+	 * What the format seed produced before it was read from the package: the
+	 * hardcoded lists AutoConfig used to re-apply on every request.
+	 *
+	 * Kept so that an install carrying exactly this can be told apart from one
+	 * an admin has since changed - see reseedFormatsIfUntouched(). Frozen
+	 * history, not a list to maintain: nothing else may read these.
+	 */
+	private const LEGACY_SEED_DEFAULT_FORMATS = [
+		'doc', 'docx', 'odp', 'ods', 'odt', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx',
+	];
+	private const LEGACY_SEED_EDIT_FORMATS = [
+		'csv', 'doc', 'docx', 'odp', 'ods', 'odt', 'ppt', 'pptx', 'rtf', 'txt', 'xls', 'xlsx',
+	];
+
 	public function autoConfigIfNeeded() {
 		if ($this->shouldAutoConfig()) {
 			$this->autoConfig();
 		}
+	}
+
+	/**
+	 * Re-seed the format settings of an install that still carries what the old
+	 * hardcoded seed wrote, and leave every other install alone.
+	 *
+	 * Existing installs are the ones the seed cannot reach: seeding runs from
+	 * autoConfig(), which only runs while the connector has no document server
+	 * url, so an instance configured before this change keeps the matrix the
+	 * old code left behind - twelve editable formats, three of which (doc, ppt,
+	 * xls) the bundled server cannot edit at all, and none of the twenty-nine
+	 * it can.
+	 *
+	 * The old code force-wrote the matrix on every request, so an install that
+	 * ran it holds exactly the hardcoded lists - except where the admin
+	 * *disabled* something, which survived because the write was an AND against
+	 * what was already there. That asymmetry is what makes this safe to decide:
+	 * anything other than the two lists exactly is an admin's own choice, and
+	 * is left as it is.
+	 *
+	 * @return bool whether the formats were re-seeded
+	 */
+	public function reseedFormatsIfUntouched(): bool {
+		if (!$this->isCommunityDocumentServerConfigured()) {
+			return false;
+		}
+
+		$enabled = ['def' => [], 'edit' => []];
+		foreach ($this->appConfig->FormatsSetting() as $format => $settings) {
+			foreach (['def', 'edit'] as $action) {
+				if ($settings[$action] ?? false) {
+					$enabled[$action][] = $format;
+				}
+			}
+		}
+
+		sort($enabled['def']);
+		sort($enabled['edit']);
+		$legacyDefault = self::LEGACY_SEED_DEFAULT_FORMATS;
+		$legacyEdit = self::LEGACY_SEED_EDIT_FORMATS;
+		sort($legacyDefault);
+		sort($legacyEdit);
+
+		if ($enabled['def'] !== $legacyDefault || $enabled['edit'] !== $legacyEdit) {
+			return false;
+		}
+
+		return $this->seedSupportedFormats();
+	}
+
+	public function isCommunityDocumentServerConfigured(): bool {
+		return strpos((string)$this->appConfig->GetDocumentServerUrl(), 'apps/documentserver_community') !== false;
 	}
 
 	/**
@@ -94,14 +161,16 @@ class AutoConfig {
 	 * Seeding still earns its keep, because the connector leaves the
 	 * lossy-editable formats (odt, ods, odp, csv, rtf, txt) off by default;
 	 * that was the point of doing this at all.
+	 *
+	 * @return bool whether the settings were written
 	 */
-	private function seedSupportedFormats(): void {
+	private function seedSupportedFormats(): bool {
 		$bundled = $this->bundledFormats->actions();
 		if (!$bundled) {
 			// no package to ask, so nothing to say about it: leave the
 			// connector's own defaults alone rather than writing every format
 			// off
-			return;
+			return false;
 		}
 
 		$editable = array_fill_keys($this->bundledFormats->editable(), true);
@@ -127,5 +196,7 @@ class AutoConfig {
 
 		$this->appConfig->SetDefaultFormats($defaultFormats);
 		$this->appConfig->SetEditableFormats($editFormats);
+
+		return true;
 	}
 }

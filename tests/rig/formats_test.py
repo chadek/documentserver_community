@@ -9,18 +9,20 @@ as good as not working at all. The list had also gone stale: twelve formats
 where the bundled server declares twenty-nine editable, three of the twelve
 (doc, ppt, xls) not editable at all.
 
-Three things, in order:
+Four things, in order:
 
   1. the seed - a fresh install gets every format the bundled server can edit,
      and only the curated set as default openers
   2. no reversion - an admin's own choice survives page loads
   3. the setting reaches the editor - the connector opens a file in view mode
      when its format is not enabled for editing, and in edit mode when it is
+  4. the repair - an install configured before any of this gets the corrected
+     matrix on upgrade, unless the admin has changed it
 
 No browser needed: what the editor is told is the connector's own config
 response, which is a cheaper and less ambiguous reading than sdkjs internals.
 """
-import argparse, json, os, subprocess, sys
+import argparse, json, os, re, subprocess, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib'))
 import config
@@ -37,6 +39,18 @@ MUST_NOT_EDIT = ['doc', 'ppt', 'xls', 'vsdx']
 WAS_REVERTED = ['pdf', 'docm', 'html', 'epub', 'ott', 'tsv', 'xlsm']
 
 DEFAULT_OPENERS = ['doc', 'docx', 'odp', 'ods', 'odt', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx']
+
+# What the old hardcoded seed wrote, and therefore what an install configured
+# before this change still carries. Kept here as its own copy rather than
+# imported from anywhere: the point of the check is that the repair recognises
+# these exact lists, so a test that read them from the code under test would
+# agree with it no matter what it said.
+LEGACY_DEFAULT = ['doc', 'docx', 'odp', 'ods', 'odt', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx']
+LEGACY_EDIT = ['csv', 'doc', 'docx', 'odp', 'ods', 'odt', 'ppt', 'pptx', 'rtf', 'txt',
+               'xls', 'xlsx']
+
+INFO_XML = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
+                        'appinfo', 'info.xml')
 
 
 def page_loads(times=3):
@@ -156,6 +170,105 @@ def reaches_the_editor(ok, fileid, kind):
     return ok
 
 
+def write_matrix(default_on, edit_on):
+    """The stored matrix as the old code left it: an entry per known format.
+
+    An explicit true or false for every format the connector knows, because
+    that is what the old seed wrote - and what the repair has to recognise. A
+    map with only the enabled formats in it would read back differently, since
+    the connector fills the gaps from its own defaults.
+    """
+    keys = list((harness.get_json_app_config('defFormats') or {}).keys())
+    harness.set_json_app_config('defFormats', {k: k in default_on for k in keys})
+    harness.set_json_app_config('editFormats', {k: k in edit_on for k in keys})
+    return keys
+
+
+def enabled(key):
+    return sorted(name for name, on in (harness.get_json_app_config(key) or {}).items() if on)
+
+
+def previous_version():
+    """A version below the one in info.xml, so the app's upgrade path runs."""
+    version = re.search(r'<version>([^<]+)</version>', open(INFO_XML).read()).group(1)
+    parts = [int(part) for part in version.split('.')]
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i]:
+            parts[i] -= 1
+            return '.'.join(str(part) for part in parts)
+    raise RuntimeError(f'no version below {version}')
+
+
+def upgrade_the_app():
+    """Run the app's upgrade path, which is what carries its repair steps.
+
+    Repair steps are not part of `occ maintenance:repair` - that runs core's -
+    so the only way to reach one is an app whose installed version is behind
+    what info.xml declares. Which is also the reason the version has to be
+    bumped for any of this to reach a real instance.
+    """
+    harness.occ('config:app:set', harness.APP_ID, 'installed_version',
+                '--value', previous_version(), check=True)
+    harness.occ('upgrade', check=True)
+
+
+def repair(ok):
+    print('\n==> [4] an existing install is repaired on upgrade')
+    before_default = harness.get_json_app_config('defFormats') or {}
+    before_edit = harness.get_json_app_config('editFormats') or {}
+    if not before_default:
+        print('   FAIL - no stored format matrix to work from')
+        return False
+
+    try:
+        # (a) an install still carrying exactly what the old seed wrote. Seeding
+        # only ever runs while the connector has no url, so without the repair
+        # this instance would keep the stale matrix for good.
+        write_matrix(LEGACY_DEFAULT, LEGACY_EDIT)
+        print(f'   wrote the old hardcoded matrix ({len(LEGACY_EDIT)} editable)')
+        upgrade_the_app()
+
+        editable, openers = enabled('editFormats'), enabled('defFormats')
+        print(f'   after upgrade: {len(editable)} editable, {len(openers)} default openers')
+        if len(editable) < 20:
+            ok = False
+            print(f'   FAIL - the matrix was not repaired: still {editable}')
+        wrong = [name for name in MUST_NOT_EDIT if name in editable]
+        if wrong:
+            ok = False
+            print(f'   FAIL - repair left formats the server cannot edit: {wrong}')
+        missing = [name for name in MUST_EDIT if name not in editable]
+        if missing:
+            ok = False
+            print(f'   FAIL - repair left these off: {missing}')
+        if openers != sorted(DEFAULT_OPENERS):
+            ok = False
+            print(f'   FAIL - repair changed the default openers to {openers}')
+
+        # (b) the same install, with one format an admin turned on themselves.
+        # The old code force-wrote the matrix on every request, so anything
+        # other than the two lists exactly is a choice somebody made after it
+        # stopped doing that - and it has to survive.
+        customised = sorted(LEGACY_EDIT + ['html'])
+        write_matrix(LEGACY_DEFAULT, customised)
+        print('   wrote the old matrix plus one format an admin enabled (html)')
+        upgrade_the_app()
+
+        editable = enabled('editFormats')
+        if editable != customised:
+            ok = False
+            print(f"   FAIL - the admin's choice was overwritten: {editable}")
+        else:
+            print(f'   after upgrade: unchanged, {len(editable)} editable')
+    finally:
+        harness.set_json_app_config('defFormats', before_default)
+        harness.set_json_app_config('editFormats', before_edit)
+        harness.wait_for(lambda: harness.get_json_app_config('editFormats'), before_edit)
+        print('   matrix restored')
+
+    return ok
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--kind', default='docx', choices=sorted(config.DOCUMENTS))
@@ -167,6 +280,7 @@ def main():
     ok = seed(ok)
     ok = no_reversion(ok)
     ok = reaches_the_editor(ok, fileid, args.kind)
+    ok = repair(ok)
 
     errors = harness.app_log_errors()
     if errors:

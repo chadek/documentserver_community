@@ -38,7 +38,7 @@ nothing about a particular instance is hardcoded in a test.
 
 | test | covers |
 | --- | --- |
-| `formats` | a fresh install is seeded with every format the bundled server can edit, and from then on the admin's own choice survives page loads — `AutoConfig` runs from `boot()`, so on every request, and it used to re-apply a hardcoded list over whatever the settings UI had written. Also checks the setting reaches the editor, by reading the connector's own config response rather than sdkjs internals |
+| `formats` | a fresh install is seeded with every format the bundled server can edit, and from then on the admin's own choice survives page loads — `AutoConfig` runs from `boot()`, so on every request, and it used to re-apply a hardcoded list over whatever the settings UI had written. Also checks the setting reaches the editor, by reading the connector's own config response rather than sdkjs internals; and that an install configured *before* any of this is repaired on upgrade, since seeding only ever runs while the connector has no url — but only when it still carries exactly what the old code wrote, so an admin who has changed anything keeps their settings. Runs `occ upgrade` twice, which is the only thing that carries an app's repair steps |
 | `smoke` | every format opens with no JS exception or failed request, takes an edit, and that edit is in the file after a flush. Catches the whole class of "the editor does not come up": an unrendered `api.js`, stylesheets killed by the CSP nonce, fonts the converter cannot find, appdata the file cache never heard about |
 | `flush-live` | flushing a document somebody is still editing writes the file and leaves the change list and the document folder alone, and `--snapshot` does that write on its own. The change list is the only record of what was typed — `Editor.bin` stays at the version the document was opened at — so consuming it mid-session strands the document |
 | `autosave` | edits reach the file while the document is open, with no cron and no flush; a save inside the interval does not re-assemble the document; `autosave_interval 0` turns it off |
@@ -72,6 +72,11 @@ nothing about a particular instance is hardcoded in a test.
   app` clears it; `occ` does not use opcache at all, which is how the same
   request can take the old path from the browser and the new one from the
   command line.
+- **An app's repair steps only run when its installed version is behind
+  `appinfo/info.xml`.** `occ maintenance:repair` runs core's, not the app's, so
+  `formats_test` lowers `installed_version` and runs `occ upgrade` — and a
+  change that needs a repair step reaches a real instance only if the version in
+  `info.xml` was bumped along with it.
 - Deleting appdata behind Nextcloud's back leaves stale file cache rows and the
   next conversion fails with `Could not create path .../Editor.bin`;
   `harness.reset()` follows it with `files:scan-app-data` for that reason.
