@@ -14,8 +14,8 @@ never settles for "the request returned 200".
 
 ## Running it
 
-Needs docker, python3 with `websockets` and `requests`, chromium, and the
-document server tree in place:
+Needs docker, python3 with `websockets` and `requests`, chromium, `pdftotext`
+(`poppler-utils`, for the PDF test), and the document server tree in place:
 
     make                        # in the app directory, once: downloads the document server
     pip install websockets requests
@@ -47,6 +47,7 @@ nothing about a particular instance is hardcoded in a test.
 | `coedit` | two users in one document each see what the other types, in a text document and in a spreadsheet, with one socket session per browser — a second one means the transport reconnected mid-edit |
 | `forcesave` | the Save button the "Keep intermediate versions when editing" setting puts in the editor: the two-part reply the editor accepts, the text in the file with no cron and no flush, and a session opened afterwards still seeing everything — the button must snapshot, not flush |
 | `chat` | the chat panel carries messages both ways, and a late joiner reads the backlog |
+| `pdf` | a document converted to PDF has its text in it. The bundled font paths are stored in `font_selection.bin` as absolute paths of whichever machine ran `allfontsgen` — the build machine, for an app store install — and when one does not resolve x2t writes a PDF with no glyphs and exits 0, which is why exporting to PDF was blank for four years (#371, #251, #287). Also checks the two things that kept it silent: a font x2t cannot load now reaches the log, and a font rebuild that cannot write its output fails instead of printing `rebuilding` and exiting 0 |
 
 ## Things that will mislead you
 

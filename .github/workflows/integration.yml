@@ -85,6 +85,8 @@ jobs:
       - name: install what drives the browser
         run: |
           python3 -m pip install --quiet websockets requests
+          # pdftotext, for reading the text back out of a converted PDF
+          sudo apt-get install -y -qq poppler-utils
           # the runner image ships Chrome; the rig will take either
           echo "RIG_CHROMIUM=$(command -v google-chrome || command -v chromium || command -v chromium-browser)" >> "$GITHUB_ENV"
 

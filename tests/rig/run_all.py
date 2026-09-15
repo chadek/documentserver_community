@@ -41,6 +41,9 @@ SUITE = [
      "the editor's Save button writes the file without ending the session"),
     ('chat', 'chat_test.py', [],
      'the chat panel, including a late joiner reading the backlog'),
+    ('pdf', 'pdf_test.py', [],
+     'a converted PDF has the text in it, a font that cannot be loaded is '
+     'logged, and a rebuild that cannot write fails loudly'),
 ]
 
 

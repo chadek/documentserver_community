@@ -46,6 +46,7 @@ appstore:
 	--exclude="../$(app_name)/3rdparty/onlyoffice/documentserver/fonts" \
 	--exclude="../$(app_name)/build" \
 	--exclude="../$(app_name)/tests" \
+	--exclude="../$(app_name)/tools" \
 	--exclude="../$(app_name)/vendor" \
 	--exclude="../$(app_name)/composer.json" \
 	--exclude="../$(app_name)/composer.lock" \
@@ -141,13 +142,23 @@ appstore:
 	# Pin the generated font paths to x2t's working directory
 	# (server/FileConverter/bin). allfontsgen writes them out prefixed with its
 	# own working directory, which is neither where x2t runs nor the same path
-	# on the machine that installs the app; x2t then hands a null buffer to
-	# CFontFileLoader.LoadFontFromData and any change replay that has to measure
-	# text - saving a spreadsheet, for one - dies with "Cannot read property
-	# 'length' of null". The paths in font_selection.bin alongside it are not
-	# used for loading, so they can stay as generated.
-	sed -i 's|"[^"]*/core-fonts/|"../../../core-fonts/|g' \
-		3rdparty/onlyoffice/documentserver/server/FileConverter/bin/AllFonts.js
+	# on the machine that installs the app - and this tarball ships to every
+	# installation, so what is generated here is what they all get.
+	#
+	# Both of the files it writes have to be pinned. sdkjs reads AllFonts.js
+	# during change replay and hands the null buffer to
+	# CFontFileLoader.LoadFontFromData, so saving a spreadsheet dies with
+	# "Cannot read property 'length' of null"; x2t's PDF writer reads
+	# font_selection.bin and, when the path does not resolve, writes a PDF with
+	# no glyphs in it and exits 0 (#371, #251, #287). This used to pin only
+	# AllFonts.js, on the belief that font_selection.bin was not used for
+	# loading, which is why PDF export was blank for four years.
+	#
+	# font_selection.bin is not sed-able - its strings are length-prefixed -
+	# hence the php, which shares its rewriter with the runtime rebuild.
+	command -v php >/dev/null || { echo 'php is needed to pin the font paths' >&2; exit 1; }
+	php tools/pin-font-paths.php \
+		3rdparty/onlyoffice/documentserver/server/FileConverter/bin
 	# Build the presentation design themes. Another job the DocService we do not
 	# ship normally does: the package only carries their sources under
 	# sdkjs/slide/themes/src, so without this the presentation editor's design

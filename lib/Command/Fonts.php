@@ -77,8 +77,11 @@ class Fonts extends Base {
 		} catch (\Exception $e) {
 			$error = $e->getMessage();
 			$output->writeln("<error>$error</error>");
-			return 0;
+			// These two were the wrong way round, so a rebuild that failed
+			// exited 0 and one that worked exited 1: anything scripting this
+			// was told the opposite of what happened.
+			return 1;
 		}
-		return 1;
+		return 0;
 	}
 }

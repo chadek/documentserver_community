@@ -266,3 +266,35 @@ def app_log_errors():
         "grep -o '\"level\":[34][^\\n]*documentserver[^\\n]*' "
         "/var/www/html/data/nextcloud.log | tail -20 || true")
     return [line for line in out.split('\n') if line.strip()]
+
+
+# Booting Nextcloud the way occ does, so a test can call app classes with the
+# real container behind them. The rig's image ships no tests/ and no phpunit,
+# and there is no occ command that converts a document, so this is how the
+# converter gets driven from outside a browser.
+NC_EVAL = r"""<?php
+define('OC_CONSOLE', 1);
+require_once '/var/www/html/lib/versioncheck.php';
+require_once '/var/www/html/lib/base.php';
+\OC::$server->get(\OCP\ISession::class)->close();
+require $argv[1];
+"""
+
+
+def php_eval(source):
+    """Run PHP inside the container with the server booted. Returns its output."""
+    with tempfile.TemporaryDirectory() as tmp:
+        runner, script = os.path.join(tmp, 'nc-eval.php'), os.path.join(tmp, 'script.php')
+        with open(runner, 'w') as f:
+            f.write(NC_EVAL)
+        with open(script, 'w') as f:
+            f.write(source)
+        for path in (runner, script):
+            os.chmod(path, 0o644)
+            subprocess.run(['docker', 'cp', path, f'{config.APP_CONTAINER}:/tmp/'],
+                           capture_output=True)
+    r = subprocess.run(
+        ['docker', 'exec', '-u', 'www-data', '-w', '/var/www/html', config.APP_CONTAINER,
+         'php', '/tmp/nc-eval.php', '/tmp/script.php'],
+        capture_output=True, text=True)
+    return (r.stdout + r.stderr).strip()
