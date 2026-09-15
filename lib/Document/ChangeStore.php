@@ -66,16 +66,26 @@ class ChangeStore {
 	 * collides: by then the other writer has committed, so the fresh max is
 	 * past its changes.
 	 *
+	 * The index the batch was actually stored at is returned rather than left to
+	 * the caller to guess. A caller that reads the max itself before calling
+	 * this is reading it outside the transaction, so a concurrent save - the
+	 * very thing the retry exists for - leaves it describing changes by numbers
+	 * they were not stored under.
+	 *
+	 * @return int the change index of the first change stored, or the index the
+	 *             batch would have started at when there were no changes to
+	 *             store
 	 * @throws DBException
 	 */
-	public function addChangesForDocument(int $documentId, array $changes, string $user, string $userOriginal) {
+	public function addChangesForDocument(int $documentId, array $changes, string $user, string $userOriginal): int {
 		$time = $this->timeFactory->getTime();
 
 		for ($attempt = 1;; $attempt++) {
 			$this->connection->beginTransaction();
 
 			try {
-				$changeIndex = $this->getMaxChangeIndexForDocument($documentId) + 1;
+				$startIndex = $this->getMaxChangeIndexForDocument($documentId) + 1;
+				$changeIndex = $startIndex;
 
 				foreach ($changes as $change) {
 					$this->addChangeForDocument($documentId, $change, $user, $userOriginal, $time, $changeIndex);
@@ -83,7 +93,7 @@ class ChangeStore {
 				}
 
 				$this->connection->commit();
-				return;
+				return $startIndex;
 			} catch (\Throwable $e) {
 				if ($this->connection->inTransaction()) {
 					$this->connection->rollBack();

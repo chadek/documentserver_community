@@ -84,9 +84,15 @@ class SaveChangesCommand implements ICommandHandler {
 			$this->changeStore->deleteChangesByIndex($session->getDocumentId(), (int)$command['deleteIndex']);
 		}
 
+		// Relayed for completeness and nothing else: sdkjs never reads
+		// startIndex out of this message. Which is why it is left as the max
+		// read before the insert, stale though that is when a save races
+		// another one - there is nothing on the other end for a corrected value
+		// to be correct *for*.
 		$startIndex = $this->changeStore->getMaxChangeIndexForDocument($session->getDocumentId());
 
-		$this->changeStore->addChangesForDocument($session->getDocumentId(), $changes, $session->getUserId(), $session->getUserOriginal());
+		$firstIndex = $this->changeStore->addChangesForDocument(
+			$session->getDocumentId(), $changes, $session->getUserId(), $session->getUserOriginal());
 
 		$changeIndex = $this->changeStore->getMaxChangeIndexForDocument($session->getDocumentId());
 
@@ -94,9 +100,9 @@ class SaveChangesCommand implements ICommandHandler {
 			'type' => 'saveChanges',
 			'docId' => $session->getDocumentId(),
 			'userId' => $session->getUserId(),
-			'changes' => array_map(function (string $changeString, int $offset) use ($session, $startIndex) {
-				// the store numbers the changes it just stored from $startIndex + 1 up
-				$change = new Change($session->getDocumentId(), time(), $changeString, $session->getUserId(), $session->getUserOriginal(), $startIndex + 1 + $offset);
+			'changes' => array_map(function (string $changeString, int $offset) use ($session, $firstIndex) {
+				// the store numbered the changes it just stored from $firstIndex up
+				$change = new Change($session->getDocumentId(), time(), $changeString, $session->getUserId(), $session->getUserOriginal(), $firstIndex + $offset);
 				return $change->formatForClient();
 			}, $changes, array_keys($changes)),
 			'startIndex' => $startIndex,
