@@ -73,6 +73,19 @@ class SessionCloser {
 		$this->announceParticipants($session);
 	}
 
+	/**
+	 * An editor that is gone for good: the page said so on its way out.
+	 *
+	 * The session is dropped rather than expired, and it has to be: the poll it
+	 * left behind keeps running server-side and marking it as seen, so an
+	 * expired row revives itself and the document is never seen to be empty -
+	 * see SessionManager::removeSession(). What makes acting on an
+	 * unauthenticated message safe is not that this is reversible, then, but
+	 * that the only irreversible part of it is guarded: flushChanges() checks
+	 * again, under the lock and after the converter has run, that nobody is in
+	 * the document, and a session that appeared in the meantime keeps its
+	 * changes and its baseline.
+	 */
 	public function sessionLeft(Session $session): void {
 		$documentId = $session->getDocumentId();
 

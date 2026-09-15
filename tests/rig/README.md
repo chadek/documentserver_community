@@ -72,6 +72,13 @@ nothing about a particular instance is hardcoded in a test.
   app` clears it; `occ` does not use opcache at all, which is how the same
   request can take the old path from the browser and the new one from the
   command line.
+- **A failed run leaves polls in flight, and they put their sessions back.**
+  Each editor holds a long poll for up to `Channel::TIMEOUT` (25 s), and
+  `Channel::getResponse()` re-creates a session whose row it cannot find — so a
+  `harness.reset()` right after a test that died mid-edit can be followed by
+  rows appearing from nowhere, and the next test counts editors that are not
+  there. Wait it out, or `docker compose restart app` to drop the requests,
+  before trusting a session count.
 - **An app's repair steps only run when its installed version is behind
   `appinfo/info.xml`.** `occ maintenance:repair` runs core's, not the app's, so
   `formats_test` lowers `installed_version` and runs `occ upgrade` — and a

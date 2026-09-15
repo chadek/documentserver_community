@@ -180,8 +180,23 @@ def changes():
     return int(sql('select count(*) from oc_documentserver_changes;') or 0)
 
 
+# SessionManager::EXPIRED_SESSION_TIMEOUT
+SESSION_TIMEOUT = 30
+
+
 def sessions():
-    return int(sql('select count(*) from oc_documentserver_sess;') or 0)
+    """How many editors are in a document, which is not how many rows there are.
+
+    A session that has gone is expired rather than deleted - so that a page
+    that turns out to still be there revives on its next poll instead of
+    losing its editing session - and the row is only removed later, by the
+    Cleanup job. So the row count answers "what has not been garbage-collected
+    yet", and every test that asks this means "who is still editing", which is
+    the question the app asks too (SessionManager::getSessionsForDocument).
+    """
+    return int(sql(
+        'select count(*) from oc_documentserver_sess '
+        f'where last_seen >= unix_timestamp() - {SESSION_TIMEOUT};') or 0)
 
 
 def drop_sessions():

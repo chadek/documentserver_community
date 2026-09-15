@@ -148,12 +148,20 @@ class SessionManager {
 	 * open: it stops being a participant, but if it turns out to still be
 	 * polling, its next poll marks it as seen and it simply carries on. Nothing
 	 * is disposed of on the strength of a message a live page can send.
+	 *
+	 * Backdated past the timeout rather than set to zero. Zero happens to be
+	 * far enough in the past against a real clock, but it says nothing about
+	 * why, and it only works as long as the clock is large - which is a thing
+	 * to know rather than a thing to rely on. One second past the cutoff is the
+	 * same answer to both queries that ask, and it means it.
 	 */
 	public function expireSession(string $sessionId): void {
 		$query = $this->connection->getQueryBuilder();
 
+		$expiredAt = $this->timeFactory->getTime() - self::EXPIRED_SESSION_TIMEOUT - 1;
+
 		$query->update('documentserver_sess')
-			->set('last_seen', $query->createNamedParameter(0, \PDO::PARAM_INT))
+			->set('last_seen', $query->createNamedParameter($expiredAt, \PDO::PARAM_INT))
 			->where($query->expr()->eq('session_id', $query->createNamedParameter($sessionId)));
 		QueryHelper::executeStatement($query);
 	}
@@ -161,6 +169,16 @@ class SessionManager {
 	/**
 	 * Drop a single session, for a client that said it was leaving rather than
 	 * one that stopped polling.
+	 *
+	 * Deleted rather than expired, and the abandoned poll is why. The request
+	 * that session left behind keeps running server-side for up to
+	 * Channel::TIMEOUT seconds and marks it as seen every
+	 * Channel::SEEN_INTERVAL while it does - so an expired row revives itself,
+	 * from nothing but its own orphaned poll, and the document is not disposed
+	 * of when the last editor leaves. Deleting is what makes that marking a
+	 * no-op. (A client that only stopped co-authoring is a different case: its
+	 * page is still there and still polling, and expireSession() is right for
+	 * it precisely because reviving is what should happen.)
 	 */
 	public function removeSession(string $sessionId): void {
 		$this->ipcFactory->cleanupChannel($sessionId);
@@ -191,15 +209,35 @@ class SessionManager {
 	}
 
 	/**
+	 * Who is currently in a document.
+	 *
+	 * Expired rows are left out rather than waited for. They are only deleted
+	 * by cleanSessions(), which runs from the background job, so between two
+	 * job runs the table holds every session that ever stopped polling - a
+	 * browser that was killed, a laptop that was closed. Counting those as
+	 * participants meant a document was never seen to be empty:
+	 * SessionCloser::sessionLeft() would not write the file when the last
+	 * editor left, and the write fell back to whenever the job next ran, which
+	 * is exactly the wait #100 exists to remove. It also made expireSession()
+	 * do nothing observable.
+	 *
+	 * The cutoff is the one cleanSessions() deletes by, so this only stops
+	 * counting a session that was already on its way out. A session that is
+	 * genuinely polling says so every Channel::SEEN_INTERVAL seconds, six times
+	 * over inside the timeout.
+	 *
 	 * @param int $documentId
 	 * @return Session[]
 	 */
 	public function getSessionsForDocument(int $documentId): array {
 		$query = $this->connection->getQueryBuilder();
 
+		$cutoffTime = $this->timeFactory->getTime() - self::EXPIRED_SESSION_TIMEOUT;
+
 		$query->select('session_id', 'document_id', 'user', 'user_original', 'last_seen', 'readonly', 'user_index', 'username')
 			->from('documentserver_sess')
-			->where($query->expr()->eq('document_id', $query->createNamedParameter($documentId, \PDO::PARAM_INT)));
+			->where($query->expr()->eq('document_id', $query->createNamedParameter($documentId, \PDO::PARAM_INT)))
+			->andWhere($query->expr()->gte('last_seen', $query->createNamedParameter($cutoffTime, \PDO::PARAM_INT)));
 
 		return array_map(function (array $row) {
 			return Session::fromRow($row);
