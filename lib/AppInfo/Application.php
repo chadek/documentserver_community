@@ -29,9 +29,8 @@ use OCA\DocumentServer\IPC\RedisIPCFactory;
 use OCA\DocumentServer\JSSettingsHelper;
 use OCA\DocumentServer\OnlyOffice\AutoConfig;
 use OCA\DocumentServer\OnlyOffice\BundledFormats;
+use OCA\DocumentServer\OnlyOffice\Connector;
 use OCA\DocumentServer\OnlyOffice\URLDecoder;
-use OCA\Onlyoffice\AppConfig;
-use OCA\Onlyoffice\Crypt;
 use OCP\App\IAppManager;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -39,12 +38,11 @@ use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\AppFramework\IAppContainer;
 use OCP\Files\IRootFolder;
+use OCP\IConfig;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
 use OCP\Share\IManager;
 use OCP\Util;
-use OCP\ICacheFactory;
-use Psr\Log\LoggerInterface;
 
 class Application extends App implements IBootstrap {
 	public function __construct(array $urlParams = []) {
@@ -52,6 +50,17 @@ class Application extends App implements IBootstrap {
 	}
 
 	public function register(IRegistrationContext $context): void {
+		// One per request rather than one per injection: it decides which
+		// connector app is in play and builds that connector's classes, and
+		// both answers are worth keeping for the rest of the request.
+		$context->registerService(Connector::class, function (IAppContainer $container) {
+			return new Connector(
+				$container->get(IAppManager::class),
+				$container->get(IConfig::class),
+				$container
+			);
+		});
+
 		$context->registerService(IIPCFactory::class, function (IAppContainer $c) {
 			$factory = new IPCFactory();
 			$factory->registerBackend($c->get(DatabaseIPCFactory::class));
@@ -63,11 +72,9 @@ class Application extends App implements IBootstrap {
 
 		$context->registerService(URLDecoder::class, function (IAppContainer $container) {
 			$server = $container->getServer();
-			$appConfig = $this->buildAppConfig();
-			$crypto = new Crypt($appConfig);
 
 			return new URLDecoder(
-				$crypto,
+				$container->get(Connector::class)->getCrypt(),
 				$server->get(IUserSession::class),
 				$server->get(IManager::class),
 				$server->get(IRootFolder::class)
@@ -83,48 +90,17 @@ class Application extends App implements IBootstrap {
 		});
 
 		$context->registerService(AutoConfig::class, function (IAppContainer $container) {
-			$server = $container->getServer();
-			$appConfig = $this->buildAppConfig();
 			return new AutoConfig(
-				$server->get(IURLGenerator::class),
-				$appConfig,
+				$container->get(IURLGenerator::class),
+				$container->get(Connector::class)->getAppConfig(),
 				$container->get(BundledFormats::class)
 			);
 		});
 	}
 
-	/**
-	 * Build an onlyoffice AppConfig instance regardless of the connector version.
-	 *
-	 * The onlyoffice connector changed AppConfig's constructor signature over
-	 * time: up to 10.0 it was (string, IConfig, LoggerInterface, ICacheFactory);
-	 * from 10.1 it became (string, IAppConfig, IConfig, IUserConfig,
-	 * LoggerInterface, ICacheFactory). Detect the arity and pass accordingly so
-	 * this app keeps booting across connector and Nextcloud versions.
-	 */
-	private function buildAppConfig(): AppConfig {
-		$config = \OC::$server->get(\OCP\IConfig::class);
-		$logger = \OCP\Log\logger('onlyoffice');
-		$cacheFactory = \OC::$server->get(ICacheFactory::class);
-
-		$paramCount = (new \ReflectionMethod(AppConfig::class, '__construct'))->getNumberOfParameters();
-		if ($paramCount >= 6) {
-			return new AppConfig(
-				'onlyoffice',
-				\OC::$server->get(\OCP\IAppConfig::class),
-				$config,
-				\OC::$server->get(\OCP\Config\IUserConfig::class),
-				$logger,
-				$cacheFactory
-			);
-		}
-
-		return new AppConfig('onlyoffice', $config, $logger, $cacheFactory);
-	}
-
 	public function boot(IBootContext $context): void {
-		$context->injectFn(function (IAppManager $appManager) {
-			if ($appManager->isEnabledForUser('onlyoffice')) {
+		$context->injectFn(function (Connector $connector) {
+			if ($connector->isAvailable()) {
 				$this->getAutoConfig()->autoConfigIfNeeded();
 				Util::connectHook('\OCP\Config', 'js', $this->getJSSettingsHelper(), 'extend');
 			}

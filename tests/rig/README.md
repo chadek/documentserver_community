@@ -29,10 +29,19 @@ Needs docker, python3 with `websockets` and `requests`, chromium, `pdftotext`
     ./rig.sh down               # throw it all away
 
 Knobs, all environment variables: `RIG_PROJECT` (compose project, so a second
-rig can run alongside), `RIG_PORT`, `RIG_NC_IMAGE`, `RIG_CONNECTOR_VERSION`,
-`APP_SOURCE` (which working copy to mount). `provision.sh` writes what it
-created — users, documents, file ids — to `.rig-env`, which the tests read, so
-nothing about a particular instance is hardcoded in a test.
+rig can run alongside), `RIG_PORT`, `RIG_NC_IMAGE`, `RIG_CONNECTOR` and
+`RIG_CONNECTOR_VERSION`, `APP_SOURCE` (which working copy to mount).
+`provision.sh` writes what it created — users, documents, file ids, and which
+connector it installed — to `.rig-env`, which the tests read, so nothing about a
+particular instance is hardcoded in a test.
+
+`RIG_CONNECTOR` is `onlyoffice` or `eurooffice`: this document server serves
+either, and the Euro-Office one is a fork of the ONLYOFFICE connector under its
+own app id and namespace. Provisioning installs the one asked for and disables
+the other, since both claim the same mimetypes. To run the suite against it:
+
+    RIG_CONNECTOR=eurooffice ./rig.sh provision
+    RIG_CONNECTOR=eurooffice ./rig.sh test
 
 ## What each test covers
 
@@ -58,6 +67,10 @@ nothing about a particular instance is hardcoded in a test.
   request**, and the Cleanup job writes documents that are being edited. Any
   assertion that a file did *not* change has to allow for that; `autosave_test`
   checks whether the job ran in the window it is measuring.
+- **The connector is not one app.** Everything the tests address it by — the
+  editor url, the app config the format settings live in, the OCS config
+  endpoint — carries its app id, which is `config.CONNECTOR`. A test that
+  hardcodes `onlyoffice` passes on one rig and fails on the other.
 - **The `wss://…transport=websocket` 400 in the console is deliberate.** PHP
   cannot upgrade, and the 400 is what makes the client fall back to long
   polling.

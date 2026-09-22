@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the onlyoffice format settings are seeded, and then left alone.
+"""Check that the connector format settings are seeded, and then left alone.
 
 `AutoConfig::autoConfigIfNeeded()` runs from `boot()`, so on every request, and
 it used to re-apply a hardcoded format list - force-disabling anything the

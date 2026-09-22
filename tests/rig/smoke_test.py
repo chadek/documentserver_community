@@ -23,7 +23,7 @@ from driver import Session, DISMISS_JS, PROBE_JS, TEXT_JS
 # Nextcloud's, and its own requests failing - no preview generated for a
 # document yet, no status set for the user - says nothing about whether the
 # editor came up.
-OURS = ('/apps/documentserver_community/', '/apps/onlyoffice/')
+OURS = ('/apps/documentserver_community/', f'/apps/{config.CONNECTOR}/')
 
 # The websocket attempt is expected to fail: PHP cannot upgrade, and the 400 is
 # what makes the client fall back to long polling.

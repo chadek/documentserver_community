@@ -24,7 +24,7 @@ declare(strict_types=1);
 namespace OCA\DocumentServer\Migration;
 
 use OCA\DocumentServer\OnlyOffice\AutoConfig;
-use OCP\App\IAppManager;
+use OCA\DocumentServer\OnlyOffice\Connector;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 use Psr\Container\ContainerInterface;
@@ -45,7 +45,6 @@ use Psr\Log\LoggerInterface;
  * who has changed anything keeps their own settings.
  */
 class RepairFormatSettings implements IRepairStep {
-	private IAppManager $appManager;
 	private ContainerInterface $container;
 	private LoggerInterface $logger;
 
@@ -56,18 +55,17 @@ class RepairFormatSettings implements IRepairStep {
 	 * an ordinary state for this app, and an upgrade must not fall over in it;
 	 * boot() takes the same care for the same reason.
 	 */
-	public function __construct(IAppManager $appManager, ContainerInterface $container, LoggerInterface $logger) {
-		$this->appManager = $appManager;
+	public function __construct(ContainerInterface $container, LoggerInterface $logger) {
 		$this->container = $container;
 		$this->logger = $logger;
 	}
 
 	public function getName(): string {
-		return 'Update the OnlyOffice format settings to what the bundled document server supports';
+		return 'Update the connector format settings to what the bundled document server supports';
 	}
 
 	public function run(IOutput $output): void {
-		if (!$this->appManager->isEnabledForUser('onlyoffice')) {
+		if (!$this->container->get(Connector::class)->isAvailable()) {
 			// nothing to configure, and AutoConfig would not be constructible
 			// against a connector that is not there
 			return;
@@ -82,7 +80,7 @@ class RepairFormatSettings implements IRepairStep {
 			// keeps working - it is a subset of what the server can do, not a
 			// broken state - so this is worth a line in the log and nothing
 			// more.
-			$this->logger->warning('documentserver could not update the OnlyOffice format settings: {error}', [
+			$this->logger->warning('documentserver could not update the connector format settings: {error}', [
 				'error' => $e->getMessage(),
 				'exception' => $e,
 			]);
@@ -90,7 +88,7 @@ class RepairFormatSettings implements IRepairStep {
 		}
 
 		if ($reseeded) {
-			$output->info('OnlyOffice format settings updated to what the bundled document server supports');
+			$output->info('Connector format settings updated to what the bundled document server supports');
 		}
 	}
 }

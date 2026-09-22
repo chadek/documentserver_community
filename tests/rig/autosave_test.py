@@ -22,14 +22,14 @@ import argparse, asyncio, os, subprocess, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib'))
 import config
 import harness
-from driver import Session, DISMISS_JS, TEXT_JS
+from driver import Session, CONNECTOR_EDITOR_JS, DISMISS_JS, TEXT_JS
 
 
 CLOSE_JS = r"""(() => {
   try {
     // what the editor's own close button goes through in the Nextcloud
-    // connector: OCA.Onlyoffice.onRequestClose
-    const ed = (window.OCA && OCA.Onlyoffice && OCA.Onlyoffice.docEditor) || window.docEditor;
+    // connector: OCA.<Connector>.onRequestClose
+    const ed = %s;
     if (ed && ed.destroyEditor) {
       ed.destroyEditor();
       return 'destroyEditor()';
@@ -43,7 +43,7 @@ CLOSE_JS = r"""(() => {
     }
     return 'no way to close found';
   } catch (e) { return 'error: ' + e; }
-})()"""
+})()""" % CONNECTOR_EDITOR_JS
 
 
 async def main():

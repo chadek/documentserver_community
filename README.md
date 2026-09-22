@@ -6,16 +6,16 @@ The work on this was sponsored by Nextcloud GmbH for the private home user commu
 
 ## Requirements
 The community document server only supports running on x86-64 Linux servers using glibc based distributions.
-To get it running, you also need to install the [ONLYOFFICE](https://apps.nextcloud.com/apps/onlyoffice) app.
+To get it running, you also need a connector app: either [ONLYOFFICE](https://apps.nextcloud.com/apps/onlyoffice) or [Nextcloud Office (Euro-Office)](https://apps.nextcloud.com/apps/eurooffice), which is a fork of it. Install one of them, not both - they claim the same file types, and which one opens a document is then a matter of load order.
 
 We'd like to also support ARM devices like the Raspberry Pi in the future.
 
 ## Configuring OnlyOffice
 
-The community documentserver will automatically configure itself if no other document server is configured in the onlyoffice settings ("Document Editing Service address" is empty).
+The community documentserver will automatically configure itself if no other document server is configured in the connector's settings ("Document Editing Service address" is empty).
 All other "Server settings" should be left empty.
 
-If autoconfiguration fails for any reason, you may manually enter the url. Log in as the admin and go to Settings > ONLYOFFICE. For the ONLYOFFICE Docs address, enter the value in the format of `https://<nextcloud_server>/apps/documentserver_community/`.
+If autoconfiguration fails for any reason, you may manually enter the url. Log in as the admin and go to Settings > ONLYOFFICE (or Nextcloud Office). For the document server address, enter the value in the format of `https://<nextcloud_server>/apps/documentserver_community/`.
 
 ## Update
 

@@ -18,10 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 
 APP_ID = 'documentserver_community'
-# The onlyoffice connector. Its app config is where the admin settings this app
-# has to honour live - the format matrix, the Save button - so the tests read
-# and write it as an admin would.
-CONNECTOR_ID = 'onlyoffice'
+# The connector app in play. Its app config is where the admin settings this
+# app has to honour live - the format matrix, the Save button - so the tests
+# read and write it as an admin would.
+CONNECTOR_ID = config.CONNECTOR
 
 
 def occ(*args, check=False):
@@ -101,7 +101,7 @@ def editor_config(fileid, user_pair=None):
     # error envelope rather than the 401 that would trigger one
     credentials = base64.b64encode(f'{user}:{password}'.encode()).decode()
     request = urllib.request.Request(
-        f'{config.BASE}/ocs/v2.php/apps/onlyoffice/api/v1/config/{fileid}?format=json',
+        f'{config.BASE}/ocs/v2.php/apps/{config.CONNECTOR}/api/v1/config/{fileid}?format=json',
         headers={'OCS-APIRequest': 'true', 'Authorization': f'Basic {credentials}'})
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode())

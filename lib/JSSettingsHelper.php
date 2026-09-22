@@ -23,17 +23,25 @@ declare(strict_types=1);
 
 namespace OCA\DocumentServer;
 
+use OCA\DocumentServer\OnlyOffice\Connector;
 use OCP\IConfig;
 
 class JSSettingsHelper {
 	private $config;
+	private $connector;
 
-	public function __construct(IConfig $config) {
+	public function __construct(IConfig $config, Connector $connector) {
 		$this->config = $config;
+		$this->connector = $connector;
 	}
 
 	public function extend(array $settings) {
-		$documentServerUrl = $this->config->getAppValue('onlyoffice', 'DocumentServerUrl');
+		$connectorId = $this->connector->getAppId();
+		if ($connectorId === null) {
+			return;
+		}
+
+		$documentServerUrl = $this->config->getAppValue($connectorId, 'DocumentServerUrl');
 		if (strpos($documentServerUrl, 'apps/documentserver_community')) {
 			$url = rtrim($documentServerUrl, '/') . '/3rdparty/onlyoffice/documentserver/web-apps/';
 			$settings['array']['extensionParams'] = json_encode([

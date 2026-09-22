@@ -25,7 +25,6 @@ namespace OCA\DocumentServer\OnlyOffice;
 
 use OCP\Files\IRootFolder;
 use OCP\Files\File;
-use OCA\Onlyoffice\Crypt;
 use OCP\Files\Folder;
 use OCP\IUserSession;
 use OCP\Share\IManager;
@@ -37,8 +36,15 @@ class URLDecoder {
 	private $shareManager;
 	private $rootFolder;
 
+	/**
+	 * @param object $crypt the connector's Crypt - OCA\Onlyoffice\Crypt or
+	 *                      OCA\Eurooffice\Crypt, which are the same class
+	 *                      under two names. Untyped for that reason: naming
+	 *                      either one here is a TypeError on an instance
+	 *                      running the other. See Connector.
+	 */
 	public function __construct(
-		Crypt $crypt,
+		$crypt,
 		IUserSession $userSession,
 		IManager $shareManager,
 		IRootFolder $rootFolder

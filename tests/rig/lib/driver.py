@@ -9,6 +9,8 @@ import asyncio, base64, json, re, shutil, subprocess, tempfile, time
 import urllib.request
 import websockets
 
+import config
+
 LOGIN_JS = r"""(() => {
   const u = document.querySelector('input[name=user], input#user, input[autocomplete="username"]');
   const p = document.querySelector('input[name=password], input#password, input[type=password]');
@@ -63,6 +65,13 @@ COAUTH_JS = r"""(() => {
     });
   } catch (e) { return JSON.stringify({error: String(e)}); }
 })()"""
+
+# The DocEditor the connector's page created, whichever connector that is:
+# OCA.Onlyoffice for the ONLYOFFICE one, OCA.Eurooffice for the Euro-Office
+# fork of it. A test that reaches for one of them by name finds nothing on the
+# other rig and reports it as "the editor did not close".
+CONNECTOR_EDITOR_JS = ("((window.OCA && (OCA.Onlyoffice || OCA.Eurooffice) || {})"
+                       ".docEditor || window.docEditor)")
 
 TEXT_JS = r"""(() => {
   // The page renders to a canvas, so the only way to see what a session
@@ -256,7 +265,7 @@ class Session:
         await self.drain(8)
         who = await self.eval("document.location.pathname + '|' + ((window.OC && OC.currentUser) || '?')")
         print(f'   {self.name} after login:', who)
-        await self.send('Page.navigate', url=f'{self.base}/apps/onlyoffice/{self.fileid}')
+        await self.send('Page.navigate', url=f'{self.base}/apps/{config.CONNECTOR}/{self.fileid}')
 
     async def where(self):
         return await self.eval(
@@ -383,7 +392,7 @@ class Tab(Session):
 
     async def login_and_open(self):
         # the cookie is already in this browser, so straight to the document
-        await self.send('Page.navigate', url=f'{self.base}/apps/onlyoffice/{self.fileid}')
+        await self.send('Page.navigate', url=f'{self.base}/apps/{config.CONNECTOR}/{self.fileid}')
 
     async def stop(self):
         try:

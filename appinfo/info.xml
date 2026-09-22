@@ -8,11 +8,11 @@
 The community document server is designed to make it easy to get OnlyOffice running in a Nextcloud instance without the need to setup an external document server,
 the community document server does not support all features of the official OnlyOffice document server and does not provide the same performance and scalability.
 
-It bundles Euro-Office (https://github.com/Euro-Office/DocumentServer), a fork of ONLYOFFICE DocumentServer, and plugs into the OnlyOffice connector app as before.
+It bundles Euro-Office (https://github.com/Euro-Office/DocumentServer), a fork of ONLYOFFICE DocumentServer, and plugs into a connector app: the OnlyOffice one as before, or the Euro-Office one (Nextcloud Office), which is a fork of it. Install one of them, not both.
 
 If you are setting up a larger instance or require the additional performance, please see https://onlyoffice.com for options for getting the official document server.
 
-The community document server will automatically be configured if no other document server is configured for OnlyOffice.
+The community document server will automatically be configured if no other document server is configured in the connector app.
 
 Additionally, the community document server only supports running on x86-64 Linux servers.]]>
 	</description>

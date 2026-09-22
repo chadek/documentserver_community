@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # name -> (script, args, what it covers)
 SUITE = [
     ('formats', 'formats_test.py', [],
-     'the onlyoffice format settings are seeded, then left to the admin, and an '
+     'the connector format settings are seeded, then left to the admin, and an '
      'install configured before any of that is repaired on upgrade'),
     ('smoke', 'smoke_test.py', [],
      'every format opens, edits and reaches the file'),

@@ -18,9 +18,27 @@ ADMIN_USER=${RIG_ADMIN_USER:-admin}
 ADMIN_PASSWORD=${RIG_ADMIN_PASSWORD:-rigadmin}
 USER2_NAME=${RIG_USER2_NAME:-bob}
 USER2_PASSWORD=${RIG_USER2_PASSWORD:-Kq7-rigTest-3910}
+# Which connector app to drive the editors through, and which release of it.
 # Pinned rather than "whatever the app store has today": a connector upgrade
-# changing how the editor is embedded is a thing to find out about deliberately.
-CONNECTOR_VERSION=${RIG_CONNECTOR_VERSION:-10.1.2}
+# changing how the editor is embedded is a thing to find out about
+# deliberately. Euro-Office ships the same connector under its own app id -
+# same settings, same editor page, its own namespace - and this document server
+# serves either, so the suite has to be able to run against either.
+CONNECTOR=${RIG_CONNECTOR:-onlyoffice}
+case "$CONNECTOR" in
+onlyoffice)
+	CONNECTOR_VERSION=${RIG_CONNECTOR_VERSION:-10.1.2}
+	CONNECTOR_URL="https://github.com/ONLYOFFICE/onlyoffice-nextcloud/releases/download/v${CONNECTOR_VERSION}/onlyoffice.tar.gz"
+	;;
+eurooffice)
+	CONNECTOR_VERSION=${RIG_CONNECTOR_VERSION:-11.0.5}
+	CONNECTOR_URL="https://github.com/nextcloud-releases/eurooffice/releases/download/v${CONNECTOR_VERSION}/eurooffice-v${CONNECTOR_VERSION}.tar.gz"
+	;;
+*)
+	echo "!! unknown connector '$CONNECTOR': expected onlyoffice or eurooffice"
+	exit 1
+	;;
+esac
 
 occ() { docker exec -u www-data "$APP" php occ "$@"; }
 in_app() { docker exec "$APP" sh -c "$*"; }
@@ -32,17 +50,23 @@ for _ in $(seq 1 120); do
 done
 occ status | sed 's/^/   /'
 
-echo "==> installing the ONLYOFFICE connector ${CONNECTOR_VERSION}"
-if in_app "test -d /var/www/html/custom_apps/onlyoffice"; then
+echo "==> installing the ${CONNECTOR} connector ${CONNECTOR_VERSION}"
+if in_app "test -d /var/www/html/custom_apps/${CONNECTOR}"; then
 	echo "   already there"
 else
-	in_app "curl -fsSL -o /tmp/onlyoffice.tar.gz \
-		https://github.com/ONLYOFFICE/onlyoffice-nextcloud/releases/download/v${CONNECTOR_VERSION}/onlyoffice.tar.gz \
-		&& tar xzf /tmp/onlyoffice.tar.gz -C /var/www/html/custom_apps \
-		&& chown -R www-data:www-data /var/www/html/custom_apps/onlyoffice \
-		&& rm -f /tmp/onlyoffice.tar.gz" || exit 1
+	in_app "curl -fsSL -o /tmp/connector.tar.gz '${CONNECTOR_URL}' \
+		&& tar xzf /tmp/connector.tar.gz -C /var/www/html/custom_apps \
+		&& chown -R www-data:www-data /var/www/html/custom_apps/${CONNECTOR} \
+		&& rm -f /tmp/connector.tar.gz" || exit 1
 fi
-occ app:enable onlyoffice | sed 's/^/   /'
+# Only one of them at a time: both register handlers for the same mimetypes,
+# and which one opens a document then depends on load order.
+for other in onlyoffice eurooffice; do
+	if [ "$other" != "$CONNECTOR" ] && in_app "test -d /var/www/html/custom_apps/${other}"; then
+		occ app:disable "$other" | sed 's/^/   /'
+	fi
+done
+occ app:enable "$CONNECTOR" | sed 's/^/   /'
 occ app:enable documentserver_community | sed 's/^/   /'
 
 # Point the connector at this app explicitly rather than leaving it to
@@ -50,7 +74,7 @@ occ app:enable documentserver_community | sed 's/^/   /'
 # overwrite.cli.url, which is not necessarily the host the browser uses - and
 # an editor iframe on a different origin than the page cannot be framed by it,
 # nor read by the tests.
-occ config:app:set onlyoffice DocumentServerUrl --value "${BASE}/apps/documentserver_community/" | sed 's/^/   /'
+occ config:app:set "$CONNECTOR" DocumentServerUrl --value "${BASE}/apps/documentserver_community/" | sed 's/^/   /'
 
 echo "==> the app's own setup check"
 in_app "php -r '
@@ -77,6 +101,7 @@ echo "==> uploading a document of each format"
 	echo "RIG_PROJECT=$RIG_PROJECT"
 	echo "RIG_ADMIN=${ADMIN_USER}:${ADMIN_PASSWORD}"
 	echo "RIG_USER2=${USER2_NAME}:${USER2_PASSWORD}"
+	echo "RIG_CONNECTOR=${CONNECTOR}"
 } >> "$HERE/.rig-env"
 
 for kind in docx xlsx pptx; do
@@ -112,7 +137,7 @@ for kind in docx xlsx pptx; do
 done
 
 echo "==> document server url the connector will use"
-occ config:app:get onlyoffice DocumentServerUrl | sed 's/^/   /'
+occ config:app:get "$CONNECTOR" DocumentServerUrl | sed 's/^/   /'
 
 echo
 echo "provisioned; wrote $HERE/.rig-env"

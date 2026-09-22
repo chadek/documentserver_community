@@ -21,7 +21,6 @@
 
 namespace OCA\DocumentServer\OnlyOffice;
 
-use OCA\Onlyoffice\AppConfig;
 use OCP\IURLGenerator;
 
 class AutoConfig {
@@ -49,7 +48,13 @@ class AutoConfig {
 	private $appConfig;
 	private $bundledFormats;
 
-	public function __construct(IURLGenerator $urlGenerator, AppConfig $appConfig, BundledFormats $bundledFormats) {
+	/**
+	 * @param object $appConfig the connector's AppConfig - OCA\Onlyoffice\AppConfig
+	 *                          or OCA\Eurooffice\AppConfig. Untyped because
+	 *                          naming one of them is a TypeError on an instance
+	 *                          running the other; see Connector.
+	 */
+	public function __construct(IURLGenerator $urlGenerator, $appConfig, BundledFormats $bundledFormats) {
 		$this->urlGenerator = $urlGenerator;
 		$this->appConfig = $appConfig;
 		$this->bundledFormats = $bundledFormats;

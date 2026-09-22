@@ -47,6 +47,13 @@ USER2 = _env('RIG_USER2', 'bob:Kq7-rigTest-3910')
 
 CHROMIUM = _env('RIG_CHROMIUM', '/usr/bin/chromium')
 
+# Which connector app the editors are opened through. This document server
+# serves whichever of them is installed - the Euro-Office one is a fork of the
+# ONLYOFFICE one, same settings, same editor page, different app id - and the
+# suite has to be able to say which it is driving, because the app id is in
+# every editor url and in the app config the tests read.
+CONNECTOR = _env('RIG_CONNECTOR', 'onlyoffice')
+
 # The working copy the rig mounts, and where x2t's files are inside it. The PDF
 # test reads and writes the document server tree directly, because the font list
 # it covers is a file in the tree rather than anything the app stores.

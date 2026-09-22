@@ -46,6 +46,25 @@ READ_JS = r"""(() => {
 # What the panel itself holds. A session that opened after the conversation has
 # no recorder in place, so this is the only way to see whether its backlog
 # request was answered.
+# Whether the editor offers chat at all. sdkjs turns the panel off - and then
+# never asks for the backlog - when the config says so, and the Euro-Office
+# connector says so for every document: its EditorApiController declares
+# $shareToken as a plain string defaulting to "", then gates
+# document.permissions.chat on isset($shareToken), which is true for the empty
+# string. So a late joiner there has nothing to see through no fault of this
+# server, and the check below says that rather than failing.
+CAN_CHAT_JS = r"""(() => {
+  try {
+    const w = document.querySelector('iframe').contentWindow;
+    for (const n of ['DE', 'SSE', 'PE', 'PDFE']) {
+      const app = w[n];
+      const main = app && app.getController && app.getController('Main');
+      if (main && main.appOptions) return !!main.appOptions.canChat;
+    }
+    return 'no editor';
+  } catch (e) { return 'err: ' + e; }
+})()"""
+
 PANEL_JS = r"""(() => {
   try {
     const w = document.querySelector('iframe').contentWindow;
@@ -138,11 +157,14 @@ async def main():
             await C.login_and_open(); await C.drain(25)
             panel = json.loads(await C.eval(PANEL_JS))
             print('   C chat panel holds:', panel)
-            if not isinstance(panel, list) or not all(m in panel for m in (msg_a, msg_b)):
+            if isinstance(panel, list) and all(m in panel for m in (msg_a, msg_b)):
+                print('   C: sees the whole conversation')
+            elif await C.eval(CAN_CHAT_JS) is False:
+                print('   C: the connector turned the chat panel off, so the '
+                      'client never asks for the backlog - not this server\'s doing')
+            else:
                 ok = False
                 print('   C: INCOMPLETE - a late joiner does not see the conversation')
-            else:
-                print('   C: sees the whole conversation')
         finally:
             await C.stop()
 
